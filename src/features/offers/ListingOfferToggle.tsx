@@ -1,0 +1,76 @@
+import React from 'react';
+import { View, Text, Switch, StyleSheet, Pressable } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+const COLORS = {
+  brand: '#4F46E5',
+  brandSoft: '#7C3AED',
+  text: '#1F2937',
+  textLight: '#6B7280',
+};
+
+type ListingOfferToggleProps = {
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+  minPrice?: string;
+  onSetMinPrice?: (price: string) => void;
+};
+
+export const ListingOfferToggle: React.FC<ListingOfferToggleProps> = ({
+  enabled,
+  onToggle,
+  minPrice,
+  onSetMinPrice,
+}) => {
+  return (
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <View style={styles.titleRow}>
+          <Ionicons name="pricetag-outline" size={20} color={COLORS.brand} />
+          <Text style={styles.title}>Accept Offers</Text>
+        </View>
+        <Switch
+          value={enabled}
+          onValueChange={onToggle}
+          trackColor={{ false: '#E2E8F0', true: COLORS.brandSoft }}
+          thumbColor={enabled ? COLORS.brand : '#f4f3f4'}
+        />
+      </View>
+      <Text style={styles.description}>
+        Allow buyers to negotiate the price. Items with offers enabled typically sell 30% faster.
+      </Text>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  description: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    lineHeight: 18,
+  },
+});

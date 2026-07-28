@@ -19,6 +19,17 @@ import {
   View,
 } from 'react-native';
 
+import { OfferButton } from './src/features/offers/components/OfferButton';
+import { MakeOfferSheet } from './src/features/offers/components/MakeOfferSheet';
+import { CounterOfferSheet } from './src/features/offers/components/CounterOfferSheet';
+import { OfferMessageCard } from './src/features/offers/components/OfferMessageCard';
+import { ListingOfferToggle } from './src/features/offers/ListingOfferToggle';
+import { useOffers, useOfferActions } from './src/features/offers/hooks';
+import { Offer } from './src/features/offers/types';
+import { CheckoutFlowModal } from './src/features/checkout/CheckoutFlowModal';
+import { CheckoutTarget, Order } from './src/features/checkout/types';
+import { SettingsScreen } from './src/features/settings/SettingsScreen';
+
 // Backend base URL. Override with EXPO_PUBLIC_API_URL (e.g. your LAN IP
 // "http://192.168.1.20:4000" for a physical device). Defaults differ by
 // platform: web/iOS sim can use localhost; the Android emulator maps the
@@ -26,6 +37,20 @@ import {
 const DEFAULT_API_HOST =
   Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_HOST;
+
+const COLORS = {
+  brand: '#4F46E5',
+  brandSoft: '#7C3AED',
+  accent: '#14B8A6',
+  accentSoft: '#5EEAD4',
+  action: '#F59E0B',
+  background: '#F8FAFC',
+  surface: '#FFFFFF',
+  text: '#1F2937',
+  success: '#10B981',
+  danger: '#EF4444',
+  muted: '#6B7280',
+};
 
 // Preset choices for the vendor working-schedule pickers. Days use full names in
 // a "Monday-Friday" range format; hours use a time range in the same shape.
@@ -131,6 +156,7 @@ type ChatMessage = {
   from: 'me' | 'them';
   text: string;
   time: string;
+  offer?: Offer;
 };
 
 type ChatThread = {
@@ -161,7 +187,23 @@ const demoAccounts: Account[] = [
     email: 'vendor@stumart.app',
     password: 'Vendor123',
     role: 'vendor',
-    name: 'Ama Vendor',
+    name: 'Ama Beauty Lab',
+    verificationStatus: 'verified',
+    hasSchoolIdEvidence: true,
+  },
+  {
+    email: 'kofi@stumart.app',
+    password: 'Kofi123',
+    role: 'vendor',
+    name: 'Kofi Bladez',
+    verificationStatus: 'verified',
+    hasSchoolIdEvidence: true,
+  },
+  {
+    email: 'tech@stumart.app',
+    password: 'Tech123',
+    role: 'vendor',
+    name: 'TechFix KNUST',
     verificationStatus: 'verified',
     hasSchoolIdEvidence: true,
   },
@@ -172,7 +214,7 @@ const listings: Listing[] = [
     id: 'l1',
     title: 'Soft glam and wig styling',
     vendor: 'Ama Beauty Lab',
-    category: 'Beauty',
+    category: 'Beauty & Hair',
     kind: 'Skill',
     price: 'GHS 120',
     priceType: 'Negotiable',
@@ -185,9 +227,69 @@ const listings: Listing[] = [
   },
   {
     id: 'l2',
-    title: 'Mini cake boxes',
+    title: 'Fresh Campus Fade & Lineup',
+    vendor: 'Kofi Bladez',
+    category: 'Barbering & Grooming',
+    kind: 'Skill',
+    price: 'GHS 50',
+    priceType: 'Negotiable',
+    rating: '4.9',
+    campus: 'Unity Hall (Conti)',
+    description: 'Sharp skin fades, beard shaping, hot towel treatment, and edge-ups at your room or my hostel station.',
+    image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=900&q=80',
+    tint: '#D97706',
+    tags: ['Barber', 'Fades', 'Grooming'],
+  },
+  {
+    id: 'l3',
+    title: 'Mobile Phone Screen & Battery Repair',
+    vendor: 'TechFix KNUST',
+    category: 'Tech & Repair',
+    kind: 'Skill',
+    price: 'GHS 150',
+    priceType: 'Negotiable',
+    rating: '4.8',
+    campus: 'Gaza Hostel',
+    description: 'Professional screen replacement & battery swap for iPhones and Androids. 30-min fast turnaround.',
+    image: require('./assets/phone_repair.png'),
+    tint: '#0284C7',
+    tags: ['Repair', 'Tech', 'Fast'],
+  },
+  {
+    id: 'l4',
+    title: 'Logo & Brand Identity Kit',
+    vendor: 'Nia Design Co.',
+    category: 'Design & Branding',
+    kind: 'Skill',
+    price: 'GHS 250',
+    priceType: 'Negotiable',
+    rating: '4.7',
+    campus: 'KNUST Business School',
+    description: 'Brand identity packs, launch flyers, social media kits, and vector logos for student founders.',
+    image: require('./assets/brand_kit.png'),
+    tint: '#5B38C9',
+    tags: ['Branding', 'Flyers', 'Vector'],
+  },
+  {
+    id: 'l5',
+    title: 'Graduation & Portrait Shoot',
+    vendor: 'Yaw Snaps Studio',
+    category: 'Photo & Video',
+    kind: 'Skill',
+    price: 'GHS 200',
+    priceType: 'Negotiable',
+    rating: '4.9',
+    campus: 'University Hall (Katanga)',
+    description: 'High-res outdoor portraits, group shoots, and reel clips with professional lighting and color grading.',
+    image: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=900&q=80',
+    tint: '#EA580C',
+    tags: ['Photoshoot', 'Graduation', 'Portraits'],
+  },
+  {
+    id: 'l6',
+    title: 'Mini Cake & Snack Boxes',
     vendor: 'Kobby Bakes',
-    category: 'Food',
+    category: 'Food & Bakes',
     kind: 'Product',
     price: 'GHS 180',
     priceType: 'Fixed',
@@ -199,125 +301,95 @@ const listings: Listing[] = [
     tags: ['Cakes', 'Preorder', 'Delivery'],
   },
   {
-    id: 'l3',
-    title: 'Logo and brand kit',
-    vendor: 'Nia Design Co.',
-    category: 'Design',
+    id: 'l7',
+    title: 'Custom Society T-Shirt Printing',
+    vendor: 'Kojo Prints',
+    category: 'Print & Merch',
     kind: 'Skill',
-    price: 'GHS 250',
+    price: 'GHS 85',
     priceType: 'Negotiable',
-    rating: '4.7',
-    campus: 'KNUST Business School',
-    description: 'Brand identity packs, launch flyers, and social templates for student founders and creators.',
-    image: require('./assets/brand_kit.png'),
-    tint: '#744BDC',
-    tags: ['Branding', 'Flyers', 'Fast edits'],
+    rating: '4.8',
+    campus: 'Africa Hall',
+    description: 'Custom screen printing and vinyl press for department tees, hall week merch, and hoodie packs.',
+    image: require('./assets/knust_hoodie.png'),
+    tint: '#059669',
+    tags: ['Merch', 'Printing', 'Apparel'],
   },
   {
-    id: 'l4',
-    title: 'Sneaker care kit',
+    id: 'l8',
+    title: 'Sneaker Care & Cleaning Kit',
     vendor: 'FreshStep Campus',
-    category: 'Fashion',
+    category: 'Fashion & Apparel',
     kind: 'Product',
     price: 'GHS 45',
     priceType: 'Fixed',
     rating: '4.6',
     campus: 'Evandy Hostel (KNUST)',
-    description: 'A ready-to-use kit with cleaner, brush, lace whitener, and deodorizer for everyday campus sneakers.',
+    description: 'Complete kit with cleaner, brush, lace whitener, and deodorizer for everyday campus sneakers.',
     image: require('./assets/sneaker_kit.png'),
     tint: '#6E42E1',
     tags: ['Sneakers', 'Same day', 'Pickup'],
   },
   {
-    id: 'l5',
-    title: 'Premium KNUST Hoodie',
-    vendor: 'Campus Threads',
-    category: 'Fashion',
-    kind: 'Product',
-    price: 'GHS 200',
-    priceType: 'Fixed',
-    rating: '4.9',
-    campus: 'Independence Hall',
-    description: 'High-quality, stylish black university hoodie featuring the letters KNUST in bold gold text.',
-    image: require('./assets/knust_hoodie.png'),
-    tint: '#241150',
-    tags: ['Apparel', 'Hoodie', 'Merch'],
-  },
-  {
-    id: 'l6',
-    title: 'Mobile Phone Screen Repair',
-    vendor: 'TechFix KNUST',
-    category: 'Tech',
-    kind: 'Skill',
-    price: 'GHS 150',
-    priceType: 'Negotiable',
-    rating: '4.8',
-    campus: 'Gaza Hostel',
-    description: 'Professional screen repair for iPhones and Androids. Fast turnaround and quality parts.',
-    image: require('./assets/phone_repair.png'),
-    tint: '#1F4A73',
-    tags: ['Repair', 'Tech', 'Fast'],
-  },
-  {
-    id: 'l7',
-    title: 'Frontal installation',
-    vendor: 'Ama Beauty Lab',
-    category: 'Beauty',
-    kind: 'Skill',
-    price: 'GHS 150',
-    priceType: 'Negotiable',
-    rating: '4.8',
-    campus: 'Brunei Hostel',
-    description: 'Professional lace frontal installation with styling included. Bring your own hair.',
-    image: require('./assets/frontal_installation.png'),
-    tint: '#744BDC',
-    tags: ['Hair', 'Frontal', 'Wig'],
-  },
-  {
-    id: 'l8',
-    title: 'Custom Birthday Cake',
-    vendor: 'Kobby Bakes',
-    category: 'Food',
-    kind: 'Product',
-    price: 'GHS 250',
-    priceType: 'Fixed',
-    rating: '4.9',
-    campus: 'Republic Hall',
-    description: 'Beautifully decorated custom birthday cakes. 48-hour notice required.',
-    image: 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=900&q=80',
-    tint: '#9B68F4',
-    tags: ['Cake', 'Birthday', 'Custom'],
-  },
-  {
     id: 'l9',
-    title: 'Deep Clean Service',
-    vendor: 'FreshStep Campus',
-    category: 'Fashion',
+    title: 'Java Coding & Math Tutoring',
+    vendor: 'David Tutors',
+    category: 'Tutoring & Academics',
     kind: 'Skill',
-    price: 'GHS 60',
+    price: 'GHS 70',
     priceType: 'Negotiable',
-    rating: '4.7',
-    campus: 'Evandy Hostel (KNUST)',
-    description: 'Complete deep cleaning for your dirty sneakers. Looks brand new!',
-    image: 'https://images.unsplash.com/photo-1600185365483-26d7a4cc7519?auto=format&fit=crop&w=900&q=80',
-    tint: '#6E42E1',
-    tags: ['Sneakers', 'Cleaning', 'Service'],
+    rating: '4.9',
+    campus: 'College of Science',
+    description: '1-on-1 tutoring sessions for Java, Python, Calculus, and exam revision with practice problem sets.',
+    image: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80',
+    tint: '#4F46E5',
+    tags: ['Coding', 'Math', 'Tutoring'],
   },
   {
     id: 'l10',
-    title: 'Jollof Rice Box',
+    title: 'Jollof Rice & Plantain Box',
     vendor: 'Campus Eats',
-    category: 'Food',
+    category: 'Food & Bakes',
     kind: 'Product',
     price: 'GHS 35',
     priceType: 'Fixed',
     rating: '4.8',
     campus: 'Independence Hall',
-    description: 'Delicious Jollof rice with fried plantain and chicken. Perfect for lunch.',
+    description: 'Delicious hot Jollof rice with fried plantain, grilled chicken, and shito. Perfect for lunch.',
     image: 'https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?auto=format&fit=crop&w=900&q=80',
     tint: '#FF6B6B',
     tags: ['Food', 'Lunch', 'Jollof'],
-  }
+  },
+  {
+    id: 'l11',
+    title: 'Frontal Lace Wig Installation',
+    vendor: 'Ama Beauty Lab',
+    category: 'Beauty & Hair',
+    kind: 'Skill',
+    price: 'GHS 150',
+    priceType: 'Negotiable',
+    rating: '4.8',
+    campus: 'Brunei Hostel',
+    description: 'Professional lace frontal installation with custom plucking and styling included.',
+    image: require('./assets/frontal_installation.png'),
+    tint: '#744BDC',
+    tags: ['Hair', 'Frontal', 'Wig'],
+  },
+  {
+    id: 'l12',
+    title: 'MacBook OS & SSD Repair Upgrade',
+    vendor: 'TechFix KNUST',
+    category: 'Tech & Repair',
+    kind: 'Skill',
+    price: 'GHS 120',
+    priceType: 'Negotiable',
+    rating: '4.8',
+    campus: 'Gaza Hostel',
+    description: 'MacOS reinstall, storage upgrades, battery replacement, and thermal paste clean for laptops.',
+    image: 'https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=900&q=80',
+    tint: '#0284C7',
+    tags: ['Laptop', 'Tech', 'Hardware'],
+  },
 ];
 
 const reels: Reel[] = [
@@ -329,30 +401,47 @@ const reels: Reel[] = [
     caption: 'A quick glow-up reel from booking to final look.',
     music: 'Fangs (Slowed Down) · Dionnyuss',
     comments: '26',
-    image:
-      'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?auto=format&fit=crop&w=900&q=80',
+    image: 'https://images.unsplash.com/photo-1595476108010-b4d1f102b1b1?auto=format&fit=crop&w=900&q=80',
   },
   {
     id: 'r2',
-    vendor: 'Nia Design Co.',
-    title: 'Sketch to launch-ready logo',
-    views: '3.7K',
-    caption: 'Turning a thrift brand idea into a clean campus identity.',
-    music: 'Studio Beats · Nia',
-    comments: '18',
-    image:
-      'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80',
+    vendor: 'Kofi Bladez',
+    title: '5-min clean fade before Friday jam',
+    views: '9.4K',
+    caption: 'Skin fade and sharp lineup transformation at Unity Hall.',
+    music: 'Asake - Wave · Campus Beats',
+    comments: '41',
+    image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=900&q=80',
   },
   {
     id: 'r3',
-    vendor: 'Kobby Bakes',
-    title: 'Packing a surprise cake box',
-    views: '5.4K',
-    caption: 'Small-batch treats for a hostel birthday surprise.',
-    music: 'Afternoon Vibes · Campus Kitchen',
-    comments: '12',
-    image:
-      'https://images.unsplash.com/photo-1464349095431-e9a21285b5f3?auto=format&fit=crop&w=900&q=80',
+    vendor: 'TechFix KNUST',
+    title: 'Replacing iPhone 13 screen in 15 mins',
+    views: '11.1K',
+    caption: 'Cracked glass to brand new OLED screen replacement.',
+    music: 'Tech Beats · Kwesi',
+    comments: '33',
+    image: 'https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&w=900&q=80',
+  },
+  {
+    id: 'r4',
+    vendor: 'Nia Design Co.',
+    title: 'Sketch to launch-ready logo',
+    views: '3.7K',
+    caption: 'Turning a student startup idea into a clean campus brand.',
+    music: 'Studio Beats · Nia',
+    comments: '18',
+    image: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80',
+  },
+  {
+    id: 'r5',
+    vendor: 'Yaw Snaps Studio',
+    title: 'Golden hour graduation portrait tricks',
+    views: '7.8K',
+    caption: 'Behind the scenes at KNUST Great Hall.',
+    music: 'Highlife Grooves · Yaw Snaps',
+    comments: '29',
+    image: 'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=900&q=80',
   },
 ];
 
@@ -365,59 +454,135 @@ const chats = [
   },
   {
     id: 'c2',
-    vendor: 'FreshStep Campus',
-    last: 'Send a photo of the sneakers and I will confirm timing.',
-    unread: 0,
+    vendor: 'TechFix KNUST',
+    last: 'I have genuine iPhone 12 screen replacements available.',
+    unread: 1,
   },
   {
     id: 'c3',
+    vendor: 'Kofi Bladez',
+    last: 'Friday 4pm slot is locked for your haircut & lineup.',
+    unread: 0,
+  },
+  {
+    id: 'c4',
     vendor: 'Nia Design Co.',
     last: 'The starter logo package includes two revisions.',
     unread: 1,
   },
 ];
 
-const categories = ['All', 'Beauty', 'Food', 'Design', 'Fashion'];
-const quickNeeds = ['Glow up', 'Birthday prep', 'Brand launch', 'Clean kicks'];
+const categories = [
+  'All',
+  'Beauty & Hair',
+  'Barbering & Grooming',
+  'Tech & Repair',
+  'Design & Branding',
+  'Food & Bakes',
+  'Fashion & Apparel',
+  'Photo & Video',
+  'Tutoring & Academics',
+  'Print & Merch',
+];
+
+const quickNeeds = [
+  'Glow up',
+  'Fresh fade',
+  'Tech fix',
+  'Brand launch',
+  'Photo shoot',
+  'Clean kicks',
+  'Birthday prep',
+  'Exam prep',
+];
+
 const demoVendorName = 'Ama Beauty Lab';
 
 const exploreTiles = [
-  { title: 'Beauty', subtitle: 'Glam, hair, nails', icon: 'sparkles-outline' as IconName, color: '#6E42E1' },
-  { title: 'Food', subtitle: 'Meals, cakes, snacks', icon: 'restaurant-outline' as IconName, color: '#1F4A73' },
-  { title: 'Design', subtitle: 'Logos and flyers', icon: 'color-palette-outline' as IconName, color: '#5B38C9' },
-  { title: 'Fashion', subtitle: 'Care, fits, styling', icon: 'shirt-outline' as IconName, color: '#744BDC' },
+  { title: 'Beauty & Hair', subtitle: 'Wigs, glam, lashes', icon: 'sparkles-outline' as IconName, color: '#6E42E1' },
+  { title: 'Barbering & Grooming', subtitle: 'Fades, lineups, beards', icon: 'scissors-outline' as IconName, color: '#D97706' },
+  { title: 'Tech & Repair', subtitle: 'Phones, laptops, screens', icon: 'hardware-chip-outline' as IconName, color: '#0284C7' },
+  { title: 'Design & Branding', subtitle: 'Logos, flyers, social kits', icon: 'color-palette-outline' as IconName, color: '#5B38C9' },
+  { title: 'Food & Bakes', subtitle: 'Jollof, cakes, snacks', icon: 'restaurant-outline' as IconName, color: '#16A34A' },
+  { title: 'Fashion & Apparel', subtitle: 'Sneakers, fits, care', icon: 'shirt-outline' as IconName, color: '#744BDC' },
+  { title: 'Photo & Video', subtitle: 'Shoots, graduation, reels', icon: 'camera-outline' as IconName, color: '#EA580C' },
+  { title: 'Tutoring & Academics', subtitle: 'Coding, math, exam prep', icon: 'school-outline' as IconName, color: '#4F46E5' },
+  { title: 'Print & Merch', subtitle: 'Custom tees, banners', icon: 'print-outline' as IconName, color: '#059669' },
   { title: 'Products', subtitle: 'Fixed price finds', icon: 'cube-outline' as IconName, color: '#2F6D80' },
   { title: 'Skills', subtitle: 'Book and bargain', icon: 'construct-outline' as IconName, color: '#7A4A24' },
 ];
 
-const buyerOrders = [
+export type OrderStatus = 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled' | 'Archived';
+
+export type BuyerOrder = {
+  id: string;
+  vendor: string;
+  vendorImage: any;
+  item: string;
+  description: string;
+  amount: string;
+  date: string;
+  status: OrderStatus;
+  timeline: { time: string; text: string }[];
+};
+
+const initialBuyerOrders: BuyerOrder[] = [
   {
     id: 'bo1',
     vendor: 'Ama Beauty Lab',
+    vendorImage: require('./assets/frontal_installation.png'),
     item: 'Soft glam and wig styling',
+    description: 'Full lace wig installation and styling for hall week dinner.',
     amount: 'GHS 120',
+    date: '12 Jul, 2026',
     status: 'Confirmed',
-    step: 2,
-    next: 'Appointment today at 5:00 PM',
+    timeline: [
+      { time: '12 Jul, 09:00 AM', text: 'Request sent to Ama Beauty Lab' },
+      { time: '12 Jul, 10:15 AM', text: 'Order confirmed by vendor' },
+    ]
   },
   {
     id: 'bo2',
     vendor: 'FreshStep Campus',
+    vendorImage: require('./assets/sneaker_kit.png'),
     item: 'Sneaker care kit',
+    description: 'Complete cleaning kit including brush and foam.',
     amount: 'GHS 45',
-    status: 'Awaiting vendor',
-    step: 1,
-    next: 'Vendor is checking pickup time',
+    date: '14 Jul, 2026',
+    status: 'Pending',
+    timeline: [
+      { time: '14 Jul, 02:30 PM', text: 'Request sent to FreshStep Campus' }
+    ]
   },
   {
     id: 'bo3',
     vendor: 'Nia Design Co.',
+    vendorImage: require('./assets/brand_kit.png'),
     item: 'Logo and brand kit',
+    description: 'Startup logo pack including variations and typography.',
     amount: 'GHS 250',
-    status: 'In progress',
-    step: 3,
-    next: 'First draft due Sunday',
+    date: '10 Jul, 2026',
+    status: 'Completed',
+    timeline: [
+      { time: '10 Jul, 11:00 AM', text: 'Request sent to Nia Design Co.' },
+      { time: '10 Jul, 12:00 PM', text: 'Order confirmed by vendor' },
+      { time: '12 Jul, 05:00 PM', text: 'Files delivered and order completed' },
+    ]
   },
+  {
+    id: 'bo4',
+    vendor: 'Campus Eats',
+    vendorImage: require('./assets/cake_boxes.png'),
+    item: 'Jollof Box',
+    description: 'Spicy Jollof rice with chicken and plantain.',
+    amount: 'GHS 35',
+    date: '15 Jul, 2026',
+    status: 'Cancelled',
+    timeline: [
+      { time: '15 Jul, 01:00 PM', text: 'Request sent to Campus Eats' },
+      { time: '15 Jul, 01:10 PM', text: 'Order cancelled by vendor (Sold Out)' },
+    ]
+  }
 ];
 
 const buyerHistory = [
@@ -558,6 +723,104 @@ const tabConfig: Record<Tab, { icon: IconName; activeIcon: IconName }> = {
 };
 
 export default function App() {
+  const getNegotiablePrice = (priceStr: string) => {
+    const match = priceStr.match(/\d+(\.\d+)?/);
+    if (!match) return null;
+    const price = parseFloat(match[0]);
+    const discounted = price * 0.8;
+    return `GHS ${discounted.toFixed(2)}`;
+  };
+
+  const [customerOrders, setCustomerOrders] = useState<BuyerOrder[]>(initialBuyerOrders);
+  const [orderFilter, setOrderFilter] = useState<'All' | OrderStatus>('All');
+  const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<BuyerOrder | null>(null);
+  const [offerSheetListing, setOfferSheetListing] = useState<Listing | null>(null);
+  const [counterOfferSheetData, setCounterOfferSheetData] = useState<{ previousOffer: Offer; listingTitle: string } | null>(null);
+  const [activeCheckoutTarget, setActiveCheckoutTarget] = useState<CheckoutTarget | null>(null);
+  const [showSettingsScreen, setShowSettingsScreen] = useState(false);
+
+  const handleOrderCompleted = (createdOrder: Order) => {
+    const item = createdOrder.items[0];
+    const buyerOrder: BuyerOrder & { rawOrder?: Order } = {
+      id: createdOrder.id,
+      vendor: createdOrder.sellerName,
+      vendorImage: typeof item?.imageUrl === 'string' ? { uri: item.imageUrl } : item?.imageUrl,
+      item: item?.title || 'Order Item',
+      description: item?.isNegotiated
+        ? `Negotiated price: GHS ${item.unitPrice.toFixed(2)} (listed GHS ${item.originalUnitPrice?.toFixed(2) || '—'})`
+        : `Fixed price order: GHS ${item.unitPrice.toFixed(2)} ea`,
+      amount: `GHS ${createdOrder.total.toFixed(2)}`,
+      date: createdOrder.createdAt,
+      status: 'Confirmed',
+      timeline: [
+        { time: 'Just now', text: `Payment verified via ${createdOrder.paymentDetailsMasked}` },
+        { time: 'Just now', text: 'Order received & queued in seller dashboard' },
+      ],
+      rawOrder: createdOrder,
+    };
+
+    setCustomerOrders((prev) => [buyerOrder, ...prev]);
+    showNotification(
+      'Payment Verified!',
+      `Order ${createdOrder.id} confirmed and sent to ${createdOrder.sellerName}.`
+    );
+  };
+
+  const filteredCustomerOrders = customerOrders.filter(o => 
+    o.status !== 'Archived' && (orderFilter === 'All' ? true : o.status === orderFilter)
+  );
+
+  const handleCancelOrder = (id: string) => {
+    setCustomerOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'Cancelled' } : o));
+    setSelectedOrderForDetail(null);
+  };
+
+  const handleArchiveOrder = (id: string) => {
+    setCustomerOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'Archived' } : o));
+    setSelectedOrderForDetail(null);
+  };
+
+  const [declineOrderModal, setDeclineOrderModal] = useState<BuyerOrder | null>(null);
+  const [inAppNotification, setInAppNotification] = useState<{title: string, message: string} | null>(null);
+
+  const showNotification = (title: string, message: string) => {
+    setInAppNotification({ title, message });
+    setTimeout(() => setInAppNotification(null), 4000);
+  };
+
+  const handleVendorAcceptOrder = (id: string) => {
+    setCustomerOrders(prev => prev.map(o => o.id === id ? { ...o, status: 'Confirmed' } : o));
+    showNotification('Notification to Customer', 'Your order has been confirmed!');
+    setActiveTab('Chats');
+  };
+
+  const handleVendorDeclineOrder = (id: string, reason: string) => {
+    setCustomerOrders(prev => prev.map(o => o.id === id ? { 
+      ...o, 
+      status: 'Cancelled',
+      timeline: [...o.timeline, { time: new Date().toLocaleString(), text: `Order cancelled by vendor (${reason})` }]
+    } : o));
+    setDeclineOrderModal(null);
+  };
+
+  const simulateIncomingOrder = () => {
+    const newOrder: BuyerOrder = {
+      id: 'bo' + Date.now(),
+      vendor: 'Ama Beauty Lab',
+      vendorImage: require('./assets/frontal_installation.png'),
+      item: 'New Simulated Order',
+      description: 'Customer requested a new service.',
+      amount: 'GHS 100',
+      date: 'Just now',
+      status: 'Pending',
+      timeline: [
+        { time: 'Just now', text: 'Request sent to vendor' }
+      ]
+    };
+    setCustomerOrders(prev => [newOrder, ...prev]);
+    showNotification('New Order', 'You have a new incoming order request.');
+  };
+
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authFlow, setAuthFlow] = useState<AuthFlow>('signin');
@@ -615,11 +878,14 @@ export default function App() {
   const [vendorPageListing, setVendorPageListing] = useState<Listing | null>(null);
   const [studioMode, setStudioMode] = useState<StudioMode>('menu');
   const [newListingKind, setNewListingKind] = useState<ListingKind>('Skill');
+  const [newListingCategory, setNewListingCategory] = useState<string>('Tech & Repair');
   const [newListingTitle, setNewListingTitle] = useState('');
   const [newListingPrice, setNewListingPrice] = useState('');
+  const [newListingOffersEnabled, setNewListingOffersEnabled] = useState(true);
   const [newListingImageUri, setNewListingImageUri] = useState('');
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messageDraft, setMessageDraft] = useState('');
+  const [checkoutTarget, setCheckoutTarget] = useState<{ listing: Listing; price: string; offer?: Offer } | null>(null);
   // Local-only fallback used when the backend is unreachable.
   const [sentMessagesByThread, setSentMessagesByThread] = useState<Record<string, ChatMessage[]>>({});
   // Messages loaded from the backend, keyed by deterministic conversationId.
@@ -666,12 +932,30 @@ export default function App() {
 
   // Merge the thread's seeded demo messages with whatever the backend has.
   const messagesForThread = (thread: ChatThread): ChatMessage[] => {
-    const server = serverMessagesByConversation[conversationIdFor(thread)];
-    if (server && server.length) return [...thread.messages, ...server];
-    return [...thread.messages, ...(sentMessagesByThread[thread.id] ?? [])];
+    const seededMessages = Array.isArray(thread.messages)
+      ? thread.messages.filter((message): message is ChatMessage => !!message && typeof message === 'object')
+      : [];
+
+    const serverMessages = Array.isArray(serverMessagesByConversation[conversationIdFor(thread)])
+      ? serverMessagesByConversation[conversationIdFor(thread)].filter(
+          (message): message is ChatMessage => !!message && typeof message === 'object',
+        )
+      : [];
+
+    const localMessages = Array.isArray(sentMessagesByThread[thread.id])
+      ? sentMessagesByThread[thread.id].filter(
+          (message): message is ChatMessage => !!message && typeof message === 'object',
+        )
+      : [];
+
+    return [...seededMessages, ...serverMessages, ...localMessages];
   };
 
   const selectedMessages = selectedChat ? messagesForThread(selectedChat) : [];
+  const selectedChatListing = selectedChat
+    ? marketListings.find((listing) => listing.vendor === selectedChat.name)
+    : null;
+
   const vendorPageListings = vendorPageListing
     ? marketListings.filter((listing) => listing.vendor === vendorPageListing.vendor)
     : [];
@@ -689,10 +973,40 @@ export default function App() {
     return Math.round(sum / nums.length);
   };
 
+  const buildNegotiationTrail = (listing: Listing) => {
+    const price = parsePriceNumber(listing.price);
+    if (Number.isNaN(price)) {
+      return [
+        { label: 'List price', value: listing.price, status: 'current' as const },
+      ];
+    }
+
+    const buyerOffer = Math.round(price * 0.88);
+    const sellerCounter = Math.round(price * 0.94);
+    return [
+      { label: 'List price', value: listing.price, status: 'previous' as const },
+      { label: 'Your offer', value: `GHS ${buyerOffer}`, status: 'previous' as const },
+      { label: 'Current counter', value: `GHS ${sellerCounter}`, status: 'current' as const },
+    ];
+  };
+
+  const getCheckoutPrice = (listing: Listing) => {
+    const price = parsePriceNumber(listing.price);
+    if (Number.isNaN(price)) return listing.price;
+    return `GHS ${Math.round(price * 0.88)}`;
+  };
+
   const vendorMetaMap: Record<string, { days: string; hours: string }> = {
     'Ama Beauty Lab': { days: 'Mon - Sat', hours: '10:00 AM - 7:00 PM' },
-    'Kobby Bakes': { days: 'Tue - Sat', hours: '9:00 AM - 6:00 PM' },
+    'Kofi Bladez': { days: 'Mon - Sun', hours: '8:00 AM - 9:00 PM' },
+    'TechFix KNUST': { days: 'Mon - Sat', hours: '9:00 AM - 6:00 PM' },
     'Nia Design Co.': { days: 'Mon - Fri', hours: '9:00 AM - 5:00 PM' },
+    'Yaw Snaps Studio': { days: 'Wed - Sun', hours: '10:00 AM - 6:00 PM' },
+    'Kobby Bakes': { days: 'Tue - Sat', hours: '9:00 AM - 6:00 PM' },
+    'Kojo Prints': { days: 'Mon - Sat', hours: '9:00 AM - 5:00 PM' },
+    'FreshStep Campus': { days: 'Mon - Sat', hours: '8:30 AM - 6:30 PM' },
+    'Campus Threads': { days: 'Mon - Sat', hours: '9:00 AM - 6:00 PM' },
+    'David Tutors': { days: 'Mon - Sun', hours: '4:00 PM - 9:00 PM' },
   };
 
 
@@ -1192,7 +1506,7 @@ export default function App() {
       id: `vendor-${Date.now()}`,
       title: trimmedTitle,
       vendor: demoVendorName,
-      category: newListingKind === 'Skill' ? 'Beauty' : 'Product',
+      category: newListingCategory,
       kind: newListingKind,
       price: trimmedPrice.toUpperCase().startsWith('GHS') ? trimmedPrice : `GHS ${trimmedPrice}`,
       priceType,
@@ -1226,8 +1540,34 @@ export default function App() {
     setActiveTab('Home');
   };
 
-  const openListingChat = (listing: Listing, intent: 'purchase' | 'bargain') => {
-    if (intent === 'bargain' && listing.priceType !== 'Negotiable') {
+  const handlePurchase = (listing: Listing) => {
+    const rawPrice = parsePriceNumber(listing.price);
+    const unitPriceNum = Number.isNaN(rawPrice) ? 50 : rawPrice;
+    const isNegotiable = listing.priceType === 'Negotiable';
+    const effectiveUnitPrice = isNegotiable ? Math.round(unitPriceNum * 0.88) : unitPriceNum;
+
+    const target: CheckoutTarget = {
+      listing: {
+        id: listing.id,
+        title: listing.title,
+        vendor: listing.vendor,
+        price: listing.price,
+        priceType: listing.priceType,
+        image: listing.image,
+        description: listing.description,
+        category: listing.category,
+        stock: 10,
+      },
+      price: `GHS ${effectiveUnitPrice.toFixed(2)}`,
+      unitPriceNum: effectiveUnitPrice,
+      originalPriceNum: isNegotiable ? unitPriceNum : undefined,
+      initialQuantity: 1,
+    };
+    setActiveCheckoutTarget(target);
+  };
+
+  const openListingChat = (listing: Listing, intent: 'bargain') => {
+    if (listing.priceType !== 'Negotiable') {
       Alert.alert('Fixed price', 'This listing is fixed price, so bargaining is not available.');
       return;
     }
@@ -1235,9 +1575,7 @@ export default function App() {
     const thread = customerChatThreads.find((chat) => chat.name === listing.vendor);
     setSelectedChatId(thread?.id ?? 'c1');
     setMessageDraft(
-      intent === 'purchase'
-        ? `Hi ${listing.vendor}, I am interested in purchasing ${listing.title} for ${listing.price}. Is it still available?`
-        : `Hi ${listing.vendor}, I am interested in ${listing.title}. It is listed at ${listing.price}. Can we bargain?`,
+      `Hi ${listing.vendor}, I am interested in ${listing.title}. It is listed at ${listing.price}. Can we bargain?`,
     );
     setActiveTab('Chats');
   };
@@ -1271,12 +1609,14 @@ export default function App() {
       if (!res.ok) return;
       const rows = await res.json();
       if (!Array.isArray(rows)) return;
-      const mapped: ChatMessage[] = rows.map((m: any) => ({
-        id: m.id,
-        from: m.from === selfId ? 'me' : 'them',
-        text: m.text,
-        time: formatClock(m.ts),
-      }));
+      const mapped: ChatMessage[] = rows
+        .filter((m: any): m is Record<string, any> => !!m && typeof m === 'object')
+        .map((m: any) => ({
+          id: typeof m.id === 'string' && m.id ? m.id : `${conversationId}-${m.ts ?? Date.now()}`,
+          from: m.from === selfId ? 'me' : 'them',
+          text: typeof m.text === 'string' ? m.text : '',
+          time: formatClock(typeof m.ts === 'number' ? m.ts : Date.now()),
+        }));
       setServerMessagesByConversation((current) => ({ ...current, [conversationId]: mapped }));
     } catch (e) {
       // Backend unreachable — keep showing seeded/local messages.
@@ -1327,6 +1667,29 @@ export default function App() {
         sendMessageLocally(thread, trimmedMessage);
       }
     })();
+  };
+
+  const handleCheckoutConfirm = () => {
+    if (!checkoutTarget) return;
+
+    const newOrder: BuyerOrder = {
+      id: `bo${Date.now()}`,
+      vendor: checkoutTarget.listing.vendor,
+      vendorImage: typeof checkoutTarget.listing.image === 'string' ? { uri: checkoutTarget.listing.image } : checkoutTarget.listing.image,
+      item: checkoutTarget.listing.title,
+      description: `Agreed price checkout for ${checkoutTarget.listing.title}.`,
+      amount: checkoutTarget.price,
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      status: 'Confirmed',
+      timeline: [
+        { time: 'Now', text: 'Checkout confirmed at agreed offer price.' },
+      ],
+    };
+
+    setCustomerOrders((prev) => [newOrder, ...prev]);
+    setCheckoutTarget(null);
+    showNotification('Order confirmed', 'Your agreed price is locked and ready for pickup.');
+    setActiveTab('Orders');
   };
 
   // Load history when a chat opens and poll so the other party's replies appear.
@@ -1388,6 +1751,61 @@ export default function App() {
               </Pressable>
             );
           })}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+
+  const checkoutModal = (
+    <Modal
+      visible={!!checkoutTarget}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setCheckoutTarget(null)}
+    >
+      <Pressable style={styles.checkoutOverlay} onPress={() => setCheckoutTarget(null)}>
+        <Pressable style={styles.checkoutSheet} onPress={() => {}}>
+          <Text style={styles.checkoutTitle}>Confirm checkout</Text>
+          <Text style={styles.checkoutCaption}>Lock in the agreed amount and keep the vendor conversation focused on pickup details.</Text>
+          {checkoutTarget && (
+            <>
+              <View style={styles.checkoutItem}>
+                <Image
+                  source={typeof checkoutTarget.listing.image === 'string' ? { uri: checkoutTarget.listing.image } : checkoutTarget.listing.image}
+                  style={styles.checkoutImage}
+                />
+                <View style={styles.checkoutInfo}>
+                  <Text style={styles.checkoutItemTitle}>{checkoutTarget.listing.title}</Text>
+                  <Text style={styles.checkoutItemVendor}>{checkoutTarget.listing.vendor}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                    <Text style={styles.checkoutItemMeta}>{checkoutTarget.listing.priceType === 'Negotiable' ? 'Quick settle price' : 'Fixed price'}</Text>
+                    {checkoutTarget.offer && (
+                      <View style={{ backgroundColor: '#F59E0B20', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ color: '#F59E0B', fontSize: 10, fontWeight: 'bold' }}>Negotiated price</Text>
+                      </View>
+                    )}
+                  </View>
+                  {checkoutTarget.offer && checkoutTarget.offer.expiresAt && (
+                    <Text style={{ color: '#EF4444', fontSize: 12, marginTop: 4, fontWeight: '600' }}>
+                      Reserved for 24 min
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <View style={styles.checkoutLine}>
+                <Text style={styles.checkoutLineLabel}>Amount</Text>
+                <Text style={styles.checkoutAmount}>{checkoutTarget.price}</Text>
+              </View>
+            </>
+          )}
+          <View style={styles.checkoutActions}>
+            <Pressable style={styles.checkoutConfirmButton} onPress={handleCheckoutConfirm}>
+              <Text style={styles.checkoutConfirmText}>Confirm order</Text>
+            </Pressable>
+            <Pressable style={styles.checkoutCancelButton} onPress={() => setCheckoutTarget(null)}>
+              <Text style={styles.checkoutCancelText}>Cancel</Text>
+            </Pressable>
+          </View>
         </Pressable>
       </Pressable>
     </Modal>
@@ -1874,6 +2292,20 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.appShell}>
+      {inAppNotification && (
+        <View style={{
+          position: 'absolute', top: 50, left: 20, right: 20, backgroundColor: '#241150',
+          padding: 16, borderRadius: 12, zIndex: 9999, elevation: 10,
+          shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.2, shadowRadius: 10,
+          flexDirection: 'row', alignItems: 'center'
+        }}>
+          <Ionicons name="notifications" size={24} color="#6E42E1" style={{marginRight: 12}} />
+          <View style={{flex: 1}}>
+            <Text style={{color: '#FFFFFF', fontWeight: 'bold', fontSize: 16}}>{inAppNotification.title}</Text>
+            <Text style={{color: '#D4C9F0', fontSize: 13, marginTop: 2}}>{inAppNotification.message}</Text>
+          </View>
+        </View>
+      )}
       <StatusBar style="dark" />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
 
@@ -1928,7 +2360,46 @@ export default function App() {
             </View>
           </View>
         </Modal>
-        <LinearGradient colors={['#6E42E1', '#9B68F4']} style={styles.topCard}>
+
+        <Modal visible={showSettingsScreen} animationType="slide" onRequestClose={() => setShowSettingsScreen(false)}>
+          <SettingsScreen
+            visible={showSettingsScreen}
+            onBack={() => setShowSettingsScreen(false)}
+            onEditProfile={() => {
+              setShowSettingsScreen(false);
+              if (role === 'customer') {
+                setIsEditingCustomerProfile(true);
+                setActiveTab('Profile');
+              } else {
+                openProfile();
+              }
+            }}
+            onLogout={() => {
+              setShowSettingsScreen(false);
+              logout();
+              Alert.alert('Logged Out', 'You have been logged out of StuMart.');
+            }}
+            onDeleteAccount={() => {
+              setShowSettingsScreen(false);
+              logout();
+              Alert.alert('Account Deleted', 'Your StuMart account has been permanently deleted.');
+            }}
+            userDisplayName={
+              isAuthenticated
+                ? (accounts.find((a) => a.email.toLowerCase() === authEmail.toLowerCase())?.name ?? (role === 'vendor' ? 'Ama Beauty Lab' : 'Toni Customer'))
+                : (role === 'vendor' ? 'Ama Beauty Lab' : 'Toni Customer')
+            }
+            userEmail={authEmail || 'customer@stumart.app'}
+            userRole={role}
+            userAvatarUri={customerProfilePhotoUri || undefined}
+          />
+        </Modal>
+        <LinearGradient
+          colors={[COLORS.brand, COLORS.accent]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.topCard}
+        >
           <View style={styles.topBar}>
             <View style={styles.brandRow}>
               <Image source={logo} style={styles.headerLogo} resizeMode="contain" />
@@ -1937,18 +2408,22 @@ export default function App() {
                 <Text style={styles.appTitle} numberOfLines={1}>{isAuthenticated ? (accounts.find(a => a.email.toLowerCase() === authEmail.toLowerCase())?.name ?? (role === 'vendor' ? 'Your business' : 'Stumart')) : (role === 'vendor' ? 'Ama Beauty Lab' : 'Stumart')}</Text>
               </View>
             </View>
-            <Pressable style={styles.profilePill} onPress={() => openProfile()}>
-              <Ionicons name="person-circle" size={28} color="#744BDC" />
+            <Pressable style={styles.profilePill} onPress={() => setShowSettingsScreen(true)}>
+              <Ionicons name="settings-sharp" size={22} color="#4F46E5" />
             </Pressable>
           </View>
           <View style={styles.locationRow}>
             <Ionicons name="location-outline" size={16} color="#FFFFFF" />
             <Text style={styles.locationText}>KNUST • Oforikrom</Text>
           </View>
+          <View style={styles.heroBadge}>
+            <Ionicons name="rocket-outline" size={14} color="#FFFFFF" />
+            <Text style={styles.heroBadgeText}>Built for campus hustle</Text>
+          </View>
           <Text style={styles.heroLine}>
             {role === 'vendor'
-              ? 'Today at the studio'
-              : 'What do you need before your next class break?'}
+              ? 'Turn your studio into a campus favorite.'
+              : 'Find the right service before your next class break.'}
           </Text>
           {role === 'customer' ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.needRow}>
@@ -2151,7 +2626,7 @@ export default function App() {
             {vendorListings.map((listing) => (
               <View key={listing.id} style={styles.vendorProductCard}>
                 <View style={styles.vendorProductTop}>
-                  <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.vendorProductThumb} />
+                  <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.vendorProductThumb} resizeMode="cover" />
                   <View style={styles.flex}>
                     <Text style={styles.listingTitle}>{listing.title}</Text>
                     <Text style={styles.vendorName}>{listing.kind} based listing</Text>
@@ -2177,9 +2652,10 @@ export default function App() {
               </Pressable>
 
               <ImageBackground
-                source={{ uri: vendorPageListing.image }}
+                source={typeof vendorPageListing.image === 'string' ? { uri: vendorPageListing.image } : vendorPageListing.image}
                 imageStyle={styles.vendorPageImage}
                 style={styles.vendorPageHero}
+                resizeMode="cover"
               >
                 <LinearGradient colors={['rgba(31, 74, 115, 0.15)', 'rgba(31, 74, 115, 0.92)']} style={styles.vendorPageShade}>
                   <View style={styles.vendorPageBadge}>
@@ -2217,7 +2693,7 @@ export default function App() {
                 return (
                   <View key={listing.id} style={styles.vendorListingCard}>
                     <View style={styles.vendorListingTop}>
-                      <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.vendorProductThumb} />
+                      <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.vendorProductThumb} resizeMode="cover" />
                       <View style={styles.flex}>
                         <Text style={styles.listingTitle}>{listing.title}</Text>
                         <Text style={styles.vendorName}>{listing.kind}</Text>
@@ -2230,20 +2706,15 @@ export default function App() {
                       <Text style={styles.metaText}>{listing.category}</Text>
                       <Text style={styles.metaText}>{listing.rating}</Text>
                     </View>
-                    <View style={styles.vendorListingActions}>
-                      <Pressable style={styles.purchaseButton} onPress={() => openListingChat(listing, 'purchase')}>
+                            <View style={styles.vendorListingActions}>
+                      <Pressable style={styles.purchaseButton} onPress={() => handlePurchase(listing)}>
                         <Ionicons name="bag-check" size={17} color="#ffffff" />
-                        <Text style={styles.purchaseButtonText}>Purchase</Text>
+                        <Text style={styles.purchaseButtonText}>Buy now</Text>
                       </Pressable>
-                      <Pressable
-                        style={[styles.bargainButton, !canBargain && styles.bargainButtonDisabled]}
-                        onPress={() => openListingChat(listing, 'bargain')}
-                      >
-                        <Ionicons name="pricetag" size={17} color={canBargain ? '#5B38C9' : '#B3A8CE'} />
-                        <Text style={[styles.bargainButtonText, !canBargain && styles.bargainButtonTextDisabled]}>
-                          Bargain
-                        </Text>
-                      </Pressable>
+                      <OfferButton 
+                        onPress={() => setOfferSheetListing(listing)} 
+                        disabled={!canBargain} 
+                      />
                     </View>
                   </View>
                 );
@@ -2286,7 +2757,7 @@ export default function App() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mostOrderedRow}>
               {filteredListings.slice(0, 3).map((listing) => (
                 <View key={listing.id} style={styles.mostOrderedCard}>
-                  <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.mostOrderedImage} />
+                  <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.mostOrderedImage} resizeMode="cover" />
                   <View style={styles.mostOrderedBody}>
                     <Text style={styles.mostOrderedRating}>★ {listing.rating}</Text>
                     <Text style={styles.mostOrderedTitle} numberOfLines={1}>{listing.title}</Text>
@@ -2304,6 +2775,7 @@ export default function App() {
                 source={{ uri: filteredListings[1]?.image }}
                 imageStyle={styles.promoBannerImageStyle}
                 style={styles.promoBanner}
+                resizeMode="cover"
               >
                 <LinearGradient
                   colors={['rgba(255,255,255,0.05)', 'rgba(31, 74, 115, 0.85)']}
@@ -2330,7 +2802,7 @@ export default function App() {
                   onPress={() => openVendorListingPage(listing)}
                   style={styles.lunchCard}
                 >
-                  <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.lunchImage} />
+                  <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.lunchImage} resizeMode="cover" />
                   <View style={styles.lunchInfo}>
                     <Text style={styles.lunchTitle} numberOfLines={1}>{listing.title}</Text>
                     <Text style={styles.lunchVendor}>{listing.vendor}</Text>
@@ -2360,37 +2832,46 @@ export default function App() {
                 <Text style={styles.detailPanelTitle}>{selectedListing.title}</Text>
                 <Text style={styles.detailVendor}>{selectedListing.vendor}</Text>
                 <Text style={styles.detailPanelCopy}>{selectedListing.description}</Text>
+
+                <View style={styles.offerPanel}>
+                  <View style={styles.offerPanelHeader}>
+                    <View>
+                      <Text style={styles.offerPanelTitle}>Offer trail</Text>
+                      <Text style={styles.offerPanelMeta}>See the bargaining path at this stall</Text>
+                    </View>
+                    <Text style={styles.offerPanelStatus}>Best offer • {selectedListing.priceType}</Text>
+                  </View>
+                  <View style={styles.offerTape}>
+                    {buildNegotiationTrail(selectedListing).map((step) => (
+                      <View
+                        key={step.label}
+                        style={[
+                          styles.offerTapeItem,
+                          step.status === 'current' ? styles.offerTapeItemCurrent : styles.offerTapeItemMuted,
+                        ]}
+                      >
+                        <Text style={styles.offerTapeLabel}>{step.label}</Text>
+                        <Text style={[styles.offerTapeValue, step.status === 'current' && styles.offerTapeValueCurrent]}>{step.value}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={styles.offerPanelCopy}>
+                    This listing is priced to start the conversation. The current counter is the fastest way to lock a deal.
+                  </Text>
+                </View>
+
                 <View style={styles.actionRow}>
                   <Pressable
                     style={styles.darkButton}
-                    onPress={() => {
-                      const thread = customerChatThreads.find((chat) => chat.name === selectedListing.vendor);
-                      setSelectedChatId(thread?.id ?? 'c1');
-                      setMessageDraft(
-                        `Hi ${selectedListing.vendor}, I am interested in purchasing ${selectedListing.title} for ${selectedListing.price}. Is it still available?`,
-                      );
-                      setActiveTab('Chats');
-                    }}
+                    onPress={() => handlePurchase(selectedListing)}
                   >
-                    <Ionicons name="chatbubble-ellipses" size={17} color="#ffffff" />
-                    <Text style={styles.darkButtonText}>Message</Text>
+                    <Ionicons name="wallet" size={17} color="#ffffff" />
+                    <Text style={styles.darkButtonText}>Buy now</Text>
                   </Pressable>
-                  {selectedListing.priceType === 'Negotiable' && (
-                    <Pressable
-                      style={styles.lightButton}
-                      onPress={() => {
-                        const thread = customerChatThreads.find((chat) => chat.name === selectedListing.vendor);
-                        setSelectedChatId(thread?.id ?? 'c1');
-                        setMessageDraft(
-                          `Hi ${selectedListing.vendor}, I am interested in ${selectedListing.title}. It is listed at ${selectedListing.price}. Can we bargain?`,
-                        );
-                        setActiveTab('Chats');
-                      }}
-                    >
-                      <Ionicons name="pricetag" size={17} color="#6E42E1" />
-                      <Text style={styles.lightButtonText}>Bargain</Text>
-                    </Pressable>
-                  )}
+                  <OfferButton 
+                    onPress={() => setOfferSheetListing(selectedListing)} 
+                    disabled={selectedListing.priceType !== 'Negotiable'} 
+                  />
                 </View>
               </LinearGradient>
             )}
@@ -2398,69 +2879,133 @@ export default function App() {
           )
         )}
 
-        {activeTab === 'Reels' && (
+        {role === 'vendor' && activeTab === 'Orders' && (
           <>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Campus reels</Text>
-              <Text style={styles.sectionMeta}>Vendor ads to bookmark</Text>
+              <Text style={styles.sectionTitle}>Vendor Orders</Text>
+              <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                <Pressable onPress={simulateIncomingOrder} style={{marginRight: 15, padding: 5, backgroundColor: '#E8E2F7', borderRadius: 8}}>
+                  <Text style={{color: '#6E42E1', fontSize: 12, fontWeight: 'bold'}}>+ Debug Order</Text>
+                </Pressable>
+                <Text style={styles.sectionMeta}>{customerOrders.filter(o => o.status === 'Pending').length} pending</Text>
+              </View>
             </View>
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              nestedScrollEnabled
-              contentContainerStyle={styles.reelFeed}
-            >
-              {reels.map((reel) => (
-                <ImageBackground
-                  key={reel.id}
-                  source={{ uri: reel.image }}
-                  imageStyle={styles.reelImage}
-                  style={styles.reelCard}
-                >
-                  <LinearGradient colors={['transparent', 'rgba(9, 5, 20, 0.95)']} style={styles.reelOverlay}>
-                    <View style={styles.reelTopRow}>
-                      <Text style={styles.reelBadge}>{reel.views} views</Text>
-                      <View style={styles.reelActionStrip}>
-                        <Pressable style={styles.reelIconButton} onPress={() => toggleReelLike(reel.id)}>
-                          <Ionicons
-                            name={likedReels.includes(reel.id) ? 'heart' : 'heart-outline'}
-                            size={24}
-                            color={likedReels.includes(reel.id) ? '#9B68F4' : '#ffffff'}
-                          />
-                        </Pressable>
-                        <Pressable style={styles.reelIconButton} onPress={() => shareReel(reel)}>
-                          <Ionicons name="share-social-outline" size={24} color="#ffffff" />
-                        </Pressable>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.orderSummaryStrip} contentContainerStyle={styles.orderSummaryContent}>
+              {['All', 'Pending', 'Confirmed', 'Completed', 'Cancelled'].map(filter => {
+                const count = filter === 'All' 
+                  ? customerOrders.filter(o => o.status !== 'Archived').length 
+                  : customerOrders.filter(o => o.status === filter).length;
+                
+                const isActive = orderFilter === filter;
+                return (
+                  <Pressable 
+                    key={filter} 
+                    style={[styles.orderSummaryChip, isActive && styles.orderSummaryChipActive]}
+                    onPress={() => setOrderFilter(filter as any)}
+                  >
+                    <Text style={[styles.orderSummaryChipText, isActive && styles.orderSummaryChipTextActive]}>
+                      {filter} <Text style={styles.orderSummaryChipCount}>({count})</Text>
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.ordersListContainer}>
+              {customerOrders.filter(o => o.status !== 'Archived' && (orderFilter === 'All' ? true : o.status === orderFilter)).map((order: any) => {
+                let badgeStyle = styles.badgeYellow;
+                let textStyle = styles.badgeTextYellow;
+                if (order.status === 'Confirmed') { badgeStyle = styles.badgeGreen; textStyle = styles.badgeTextGreen; }
+                if (order.status === 'Completed') { badgeStyle = styles.badgeBlue; textStyle = styles.badgeTextBlue; }
+                if (order.status === 'Cancelled') { badgeStyle = styles.badgeRed; textStyle = styles.badgeTextRed; }
+
+                const isNewOrder = order.rawOrder?.isUnseenBySeller || order.status === 'Confirmed';
+                const isNegotiated = order.rawOrder?.items[0]?.isNegotiated || order.description.includes('Negotiated');
+
+                return (
+                  <View key={order.id} style={styles.orderCardNew}>
+                    <View style={styles.orderCardHeader}>
+                      <Image source={order.vendorImage} style={styles.orderCardAvatar} resizeMode="cover" />
+                      <View style={styles.orderCardVendorInfo}>
+                        <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
+                          <Text style={styles.orderCardVendorName}>{order.item}</Text>
+                          {isNewOrder && (
+                            <View style={{backgroundColor: '#10B981', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4}}>
+                              <Text style={{color: '#FFFFFF', fontSize: 10, fontWeight: '800'}}>NEW</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.orderCardDate}>{order.date}</Text>
+                      </View>
+                      <View style={[styles.statusBadgeNew, badgeStyle]}>
+                        <Text style={[styles.statusBadgeTextNew, textStyle]}>{order.status}</Text>
                       </View>
                     </View>
-                    <View style={styles.reelVendorRow}>
-                      <Text style={styles.reelVendorHandle}>@{reel.vendor}</Text>
-                      <Pressable
-                        style={[
-                          styles.subscribeButton,
-                          subscribedVendors.includes(reel.vendor) && styles.subscribeButtonActive,
-                        ]}
-                        onPress={() => toggleSubscribe(reel.vendor)}
-                      >
-                        <Text
-                          style={[
-                            styles.subscribeButtonText,
-                            subscribedVendors.includes(reel.vendor) && styles.subscribeButtonTextActive,
-                          ]}
-                        >
-                          {subscribedVendors.includes(reel.vendor) ? 'Following' : 'Subscribe'}
+                    
+                    <View style={styles.orderCardBodyNew}>
+                      <Text style={styles.orderCardItem}>Buyer: {order.vendor}</Text>
+                      <Text style={styles.orderCardAmount}>{order.amount}</Text>
+                    </View>
+
+                    {isNegotiated && (
+                      <View style={{backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 4}}>
+                        <Ionicons name="pricetag" size={12} color="#D97706" />
+                        <Text style={{color: '#D97706', fontSize: 11, fontWeight: '700'}}>
+                          {order.rawOrder?.items[0]
+                            ? `Negotiated price: GHS ${order.rawOrder.items[0].unitPrice.toFixed(2)}${order.rawOrder.items[0].originalUnitPrice ? ` (listed GHS ${order.rawOrder.items[0].originalUnitPrice.toFixed(2)})` : ''}`
+                            : order.description}
                         </Text>
-                      </Pressable>
-                    </View>
-                    <Text style={styles.reelTitle}>{reel.title}</Text>
-                    <Text style={styles.reelCaption}>{reel.caption}</Text>
-                    <View style={styles.reelBottomRow}>
-                      <Text style={styles.reelMusicText}>🎵 {reel.music}</Text>
-                      <Text style={styles.reelCommentText}>{reel.comments} comments</Text>
-                    </View>
-                  </LinearGradient>
-                </ImageBackground>
-              ))}
-            </ScrollView>
+                      </View>
+                    )}
+
+                    {order.rawOrder?.paymentDetailsMasked && (
+                      <View style={{flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4}}>
+                        <Ionicons name="card-outline" size={12} color="#64748B" />
+                        <Text style={{color: '#64748B', fontSize: 11}}>
+                          Paid via: {order.rawOrder.paymentDetailsMasked}
+                        </Text>
+                      </View>
+                    )}
+
+                    {order.status === 'Pending' && (
+                      <View style={{flexDirection: 'row', marginTop: 12, borderTopWidth: 1, borderTopColor: '#F4F1FE', paddingTop: 12}}>
+                        <Pressable style={[styles.secondaryButton, {flex: 1, marginRight: 8, marginTop: 0, borderColor: '#FF4D4D'}]} onPress={() => setDeclineOrderModal(order)}>
+                          <Text style={[styles.secondaryButtonText, {color: '#FF4D4D'}]}>Decline</Text>
+                        </Pressable>
+                        <Pressable style={[styles.secondaryButton, {flex: 1, marginLeft: 8, marginTop: 0, backgroundColor: '#6E42E1', borderColor: '#6E42E1'}]} onPress={() => handleVendorAcceptOrder(order.id)}>
+                          <Text style={[styles.secondaryButtonText, {color: '#FFFFFF'}]}>Accept</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Decline Reason Modal */}
+            <Modal visible={!!declineOrderModal} animationType="fade" transparent={true}>
+              <View style={styles.modalOverlay}>
+                <View style={[styles.modalContent, {padding: 24}]}>
+                  <Text style={[styles.sectionTitle, {marginBottom: 16, textAlign: 'center'}]}>Decline Order</Text>
+                  <Text style={{color: '#655A88', marginBottom: 20, textAlign: 'center'}}>Please select a reason for declining this request.</Text>
+                  
+                  {['Out of Stock', 'Unavailable Today', 'Too Busy', 'Other'].map(reason => (
+                    <Pressable 
+                      key={reason} 
+                      style={[styles.secondaryButton, {marginBottom: 10, marginTop: 0, paddingVertical: 12, borderColor: '#E8E2F7'}]}
+                      onPress={() => handleVendorDeclineOrder(declineOrderModal!.id, reason)}
+                    >
+                      <Text style={[styles.secondaryButtonText, {color: '#241150'}]}>{reason}</Text>
+                    </Pressable>
+                  ))}
+                  
+                  <Pressable style={{marginTop: 15, alignItems: 'center'}} onPress={() => setDeclineOrderModal(null)}>
+                    <Text style={{color: '#9A8CBF', fontWeight: 'bold', fontSize: 16}}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </Modal>
           </>
         )}
 
@@ -2502,7 +3047,7 @@ export default function App() {
 
             {marketListings.slice(0, 4).map((listing) => (
               <Pressable key={listing.id} style={styles.discoveryRow} onPress={() => openVendorListingPage(listing)}>
-                <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.discoveryImage} />
+                <Image source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} style={styles.discoveryImage} resizeMode="cover" />
                 <View style={styles.chatBody}>
                   <Text style={styles.chatName}>{listing.title}</Text>
                   <Text style={styles.chatLast}>{listing.vendor} - {listing.category}</Text>
@@ -2517,51 +3062,129 @@ export default function App() {
           <>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Orders</Text>
-              <Text style={styles.sectionMeta}>{buyerOrders.length} active</Text>
+              <Text style={styles.sectionMeta}>{customerOrders.filter(o => o.status !== 'Archived').length} active</Text>
             </View>
 
-            <View style={styles.orderSummaryBand}>
-              <View style={styles.flex}>
-                <Text style={styles.orderSummaryLabel}>Buyer requests</Text>
-                <Text style={styles.orderSummaryValue}>Track every order from request to completion.</Text>
-              </View>
-              <Ionicons name="bag-check-outline" size={30} color="#ffffff" />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.orderSummaryStrip} contentContainerStyle={styles.orderSummaryContent}>
+              {['All', 'Pending', 'Confirmed', 'Completed', 'Cancelled'].map(filter => {
+                const count = filter === 'All' 
+                  ? customerOrders.filter(o => o.status !== 'Archived').length 
+                  : customerOrders.filter(o => o.status === filter).length;
+                
+                const isActive = orderFilter === filter;
+                return (
+                  <Pressable 
+                    key={filter} 
+                    style={[styles.orderSummaryChip, isActive && styles.orderSummaryChipActive]}
+                    onPress={() => setOrderFilter(filter as any)}
+                  >
+                    <Text style={[styles.orderSummaryChipText, isActive && styles.orderSummaryChipTextActive]}>
+                      {filter} <Text style={styles.orderSummaryChipCount}>({count})</Text>
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <View style={styles.ordersListContainer}>
+              {filteredCustomerOrders.map((order) => {
+                let badgeStyle = styles.badgeYellow;
+                let textStyle = styles.badgeTextYellow;
+                if (order.status === 'Confirmed') { badgeStyle = styles.badgeGreen; textStyle = styles.badgeTextGreen; }
+                if (order.status === 'Completed') { badgeStyle = styles.badgeBlue; textStyle = styles.badgeTextBlue; }
+                if (order.status === 'Cancelled') { badgeStyle = styles.badgeRed; textStyle = styles.badgeTextRed; }
+
+                return (
+                  <Pressable key={order.id} style={styles.orderCardNew} onPress={() => setSelectedOrderForDetail(order)}>
+                    <View style={styles.orderCardHeader}>
+                      <Image source={order.vendorImage} style={styles.orderCardAvatar} resizeMode="cover" />
+                      <View style={styles.orderCardVendorInfo}>
+                        <Text style={styles.orderCardVendorName}>{order.vendor}</Text>
+                        <Text style={styles.orderCardDate}>{order.date}</Text>
+                      </View>
+                      <View style={[styles.statusBadgeNew, badgeStyle]}>
+                        <Text style={[styles.statusBadgeTextNew, textStyle]}>{order.status}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.orderCardBodyNew}>
+                      <Text style={styles.orderCardItem}>{order.item}</Text>
+                      <Text style={styles.orderCardAmount}>{order.amount}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
 
-            {buyerOrders.map((order) => (
-              <View key={order.id} style={styles.buyerOrderCard}>
-                <View style={styles.buyerOrderTop}>
-                  <View style={styles.orderIcon}>
-                    <Ionicons name="receipt-outline" size={20} color="#5B38C9" />
-                  </View>
-                  <View style={styles.chatBody}>
-                    <Text style={styles.chatName}>{order.item}</Text>
-                    <Text style={styles.chatLast}>{order.vendor}</Text>
-                  </View>
-                  <View style={styles.orderRight}>
-                    <Text style={styles.orderAmount}>{order.amount}</Text>
-                    <Text style={styles.orderStatus}>{order.status}</Text>
+            <Modal visible={!!selectedOrderForDetail} animationType="slide" transparent={true}>
+              {selectedOrderForDetail && (
+                <View style={styles.orderDetailOverlay}>
+                  <View style={styles.orderDetailContent}>
+                    <View style={styles.orderDetailHeader}>
+                      <Text style={styles.orderDetailTitle}>Order Details</Text>
+                      <Pressable onPress={() => setSelectedOrderForDetail(null)}>
+                        <Ionicons name="close-circle" size={28} color="#9A8CBF" />
+                      </Pressable>
+                    </View>
+
+                    <ScrollView>
+                      <View style={styles.orderDetailHero}>
+                        <Image source={selectedOrderForDetail.vendorImage} style={styles.orderDetailHeroImg} resizeMode="cover" />
+                        <Text style={styles.orderDetailItem}>{selectedOrderForDetail.item}</Text>
+                        <Text style={styles.orderDetailVendor}>by {selectedOrderForDetail.vendor}</Text>
+                        <Text style={styles.orderDetailAmount}>{selectedOrderForDetail.amount}</Text>
+                      </View>
+
+                      <View style={styles.orderDetailBox}>
+                        <Text style={styles.orderDetailLabel}>Description</Text>
+                        <Text style={styles.orderDetailValue}>{selectedOrderForDetail.description}</Text>
+                      </View>
+
+                      <View style={styles.orderDetailBox}>
+                        <Text style={styles.orderDetailLabel}>Timeline</Text>
+                        {selectedOrderForDetail.timeline.map((point: {time: string; text: string}, idx: number) => (
+                          <View key={idx} style={styles.timelineRow}>
+                            <View style={styles.timelineDot} />
+                            <View style={styles.timelineContent}>
+                              <Text style={styles.timelineTime}>{point.time}</Text>
+                              <Text style={styles.timelineText}>{point.text}</Text>
+                            </View>
+                          </View>
+                        ))}
+                      </View>
+
+                      <View style={styles.orderDetailActions}>
+                        <Pressable style={styles.darkButton} onPress={() => {
+                          const thread = customerChatThreads.find((chat) => chat.name === selectedOrderForDetail.vendor);
+                          setSelectedChatId(thread?.id ?? null);
+                          setSelectedOrderForDetail(null);
+                          setActiveTab('Chats');
+                        }}>
+                          <Text style={styles.darkButtonText}>Chat with vendor</Text>
+                        </Pressable>
+
+                        {selectedOrderForDetail.status === 'Completed' && (
+                          <Pressable style={styles.secondaryButton}>
+                            <Text style={styles.secondaryButtonText}>Leave a Review</Text>
+                          </Pressable>
+                        )}
+                        
+                        {(selectedOrderForDetail.status === 'Completed' || selectedOrderForDetail.status === 'Cancelled') && (
+                          <Pressable style={styles.secondaryButton} onPress={() => handleArchiveOrder(selectedOrderForDetail.id)}>
+                            <Text style={styles.secondaryButtonText}>Archive Order</Text>
+                          </Pressable>
+                        )}
+
+                        {selectedOrderForDetail.status === 'Pending' && (
+                          <Pressable style={[styles.secondaryButton, { borderColor: '#FF4D4D' }]} onPress={() => handleCancelOrder(selectedOrderForDetail.id)}>
+                            <Text style={[styles.secondaryButtonText, { color: '#FF4D4D' }]}>Cancel Request</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    </ScrollView>
                   </View>
                 </View>
-                <View style={styles.statusTrack}>
-                  {[1, 2, 3, 4].map((step) => (
-                    <View key={step} style={[styles.statusDot, step <= order.step && styles.statusDotActive]} />
-                  ))}
-                </View>
-                <Text style={styles.orderNext}>{order.next}</Text>
-                <Pressable
-                  style={styles.orderChatButton}
-                  onPress={() => {
-                    const thread = customerChatThreads.find((chat) => chat.name === order.vendor);
-                    setSelectedChatId(thread?.id ?? null);
-                    setActiveTab('Chats');
-                  }}
-                >
-                  <Ionicons name="chatbubble-ellipses-outline" size={17} color="#6E42E1" />
-                  <Text style={styles.orderChatButtonText}>Open order chat</Text>
-                </Pressable>
-              </View>
-            ))}
+              )}
+            </Modal>
           </>
         )}
         {activeTab === 'Chats' && (
@@ -2620,13 +3243,59 @@ export default function App() {
                 <View style={styles.messageList}>
                   <Text style={styles.dayPill}>Today</Text>
                   {selectedMessages.map((message) => {
+                    if (!message || typeof message !== 'object') return null;
+
                     const mine = message.from === 'me';
                     return (
-                      <View key={message.id} style={[styles.messageRow, mine && styles.messageRowMine]}>
-                        <View style={[styles.messageBubble, mine ? styles.messageBubbleMine : styles.messageBubbleTheirs]}>
-                          <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.text}</Text>
-                          <Text style={[styles.messageTime, mine && styles.messageTimeMine]}>{message.time}</Text>
-                        </View>
+                      <View key={message.id ?? `${selectedChat?.id ?? 'chat'}-${Math.random()}`} style={[styles.messageRow, mine && styles.messageRowMine]}>
+                        {message.offer ? (
+                          <OfferMessageCard
+                            offer={message.offer}
+                            isCurrentUserRecipient={!mine}
+                            onAccept={() => {
+                              // mocked accept
+                              if (message.offer) {
+                                message.offer.status = 'ACCEPTED';
+                              }
+                            }}
+                            onCounter={() => setCounterOfferSheetData({ previousOffer: message.offer!, listingTitle: 'Listing Offer' })}
+                            onDecline={() => {
+                              // mocked decline
+                              if (message.offer) {
+                                message.offer.status = 'DECLINED';
+                              }
+                            }}
+                            onCheckout={() => {
+                              if (selectedChatListing && message.offer) {
+                                const listPriceNum = parsePriceNumber(selectedChatListing.price) || message.offer.offerAmount;
+                                const target: CheckoutTarget = {
+                                  listing: {
+                                    id: selectedChatListing.id,
+                                    title: selectedChatListing.title,
+                                    vendor: selectedChatListing.vendor,
+                                    price: selectedChatListing.price,
+                                    priceType: selectedChatListing.priceType,
+                                    image: selectedChatListing.image,
+                                    description: selectedChatListing.description,
+                                    category: selectedChatListing.category,
+                                    stock: 10,
+                                  },
+                                  price: `GHS ${message.offer.offerAmount}`,
+                                  unitPriceNum: message.offer.offerAmount,
+                                  originalPriceNum: listPriceNum,
+                                  offer: message.offer,
+                                  initialQuantity: message.offer.quantity || 1,
+                                };
+                                setActiveCheckoutTarget(target);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <View style={[styles.messageBubble, mine ? styles.messageBubbleMine : styles.messageBubbleTheirs]}>
+                            <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.text ?? ''}</Text>
+                            <Text style={[styles.messageTime, mine && styles.messageTimeMine]}>{message.time ?? ''}</Text>
+                          </View>
+                        )}
                       </View>
                     );
                   })}
@@ -2671,7 +3340,7 @@ export default function App() {
                 <View style={styles.profileReadOnlySection}>
                   <View style={styles.profilePhotoLarge}>
                     {customerProfilePhotoUri ? (
-                      <Image source={{ uri: customerProfilePhotoUri }} style={styles.profilePhotoImage} />
+                      <Image source={{ uri: customerProfilePhotoUri }} style={styles.profilePhotoImage} resizeMode="cover" />
                     ) : (
                       <View style={styles.profilePhotoPlaceholder}>
                         <Ionicons name="person-circle" size={80} color="#6E42E1" />
@@ -2793,19 +3462,18 @@ export default function App() {
                   <View style={{ width: 24 }} />
                 </View>
 
-                <Pressable style={styles.profilePhotoEditBox} onPress={() => {
-                  // In real app, open image picker
-                  Alert.alert('Photo picker', 'Select a new profile photo');
-                }}>
-                  {customerProfilePhotoUri ? (
-                    <Image source={{ uri: customerProfilePhotoUri }} style={styles.profilePhotoImageEdit} />
-                  ) : (
-                    <View style={styles.profilePhotoPlaceholder}>
-                      <Ionicons name="camera-outline" size={40} color="#6E42E1" />
-                    </View>
-                  )}
+                <Pressable style={styles.profilePhotoEditBox} onPress={pickCustomerProfilePhoto}>
+                  <View style={styles.avatarCircleInner}>
+                    {customerProfilePhotoUri ? (
+                      <Image source={{ uri: customerProfilePhotoUri }} style={styles.profilePhotoImageEdit} resizeMode="cover" />
+                    ) : (
+                      <View style={styles.profilePhotoPlaceholder}>
+                        <Ionicons name="person" size={52} color="#4F46E5" />
+                      </View>
+                    )}
+                  </View>
                   <View style={styles.photoEditBadge}>
-                    <Ionicons name="camera" size={14} color="#ffffff" />
+                    <Ionicons name="camera" size={15} color="#ffffff" />
                   </View>
                 </Pressable>
 
@@ -2862,28 +3530,24 @@ export default function App() {
                   </View>
 
                   <View style={styles.editFieldGroup}>
-                    <View style={styles.notificationToggleRow}>
-                      <View>
+                    <Pressable
+                      style={styles.notificationToggleRow}
+                      onPress={() => setCustomerNotificationsEnabled(!customerNotificationsEnabled)}
+                    >
+                      <View style={{ flex: 1, paddingRight: 12 }}>
                         <Text style={styles.editFieldLabel}>Order notifications</Text>
                         <Text style={styles.editFieldDescription}>
                           Get updates on orders and messages
                         </Text>
                       </View>
-                      <Pressable
-                        onPress={() => setCustomerNotificationsEnabled(!customerNotificationsEnabled)}
-                        style={[
-                          styles.toggleSwitch,
-                          customerNotificationsEnabled && styles.toggleSwitchActive,
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.toggleCircle,
-                            customerNotificationsEnabled && styles.toggleCircleActive,
-                          ]}
-                        />
-                      </Pressable>
-                    </View>
+                      <Switch
+                        value={customerNotificationsEnabled}
+                        onValueChange={setCustomerNotificationsEnabled}
+                        trackColor={{ false: '#CBD5E1', true: '#818CF8' }}
+                        thumbColor={customerNotificationsEnabled ? '#4F46E5' : '#F1F5F9'}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      />
+                    </Pressable>
                   </View>
                 </View>
 
@@ -2973,7 +3637,7 @@ export default function App() {
                   </View>
                   <Pressable style={styles.photoUploadBox} onPress={pickListingImage}>
                     {newListingImageUri ? (
-                      <Image source={{ uri: newListingImageUri }} style={styles.photoPreview} />
+                      <Image source={{ uri: newListingImageUri }} style={styles.photoPreview} resizeMode="cover" />
                     ) : (
                       <View style={styles.photoUploadEmpty}>
                         <Ionicons name="image-outline" size={28} color="#6E42E1" />
@@ -2988,10 +3652,29 @@ export default function App() {
                       </View>
                     )}
                   </Pressable>
+                  <Text style={[styles.formLabel, { marginTop: 8 }]}>Select Category</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                    {categories.filter(c => c !== 'All').map(cat => (
+                      <Pressable
+                        key={cat}
+                        onPress={() => setNewListingCategory(cat)}
+                        style={[
+                          styles.categoryChip,
+                          newListingCategory === cat && styles.categoryChipActive,
+                          { marginRight: 8, paddingVertical: 6, paddingHorizontal: 12 }
+                        ]}
+                      >
+                        <Text style={[styles.categoryChipText, newListingCategory === cat && styles.categoryChipTextActive, { fontSize: 12 }]}>
+                          {cat}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+
                   <TextInput
                     value={newListingTitle}
                     onChangeText={setNewListingTitle}
-                    placeholder={newListingKind === 'Skill' ? 'e.g. Wig installation' : 'e.g. Hair care kit'}
+                    placeholder={newListingKind === 'Skill' ? 'e.g. Phone repair, Barber fade, Wig styling' : 'e.g. Sneaker care kit, Birthday cake, Hoodie'}
                     placeholderTextColor="#9A8CBF"
                     style={styles.input}
                   />
@@ -3003,6 +3686,12 @@ export default function App() {
                     keyboardType="default"
                     style={styles.input}
                   />
+                  {newListingKind === 'Product' && (
+                    <ListingOfferToggle 
+                      enabled={newListingOffersEnabled} 
+                      onToggle={setNewListingOffersEnabled} 
+                    />
+                  )}
                   <Pressable style={styles.primaryButton} onPress={addVendorListing}>
                     <Text style={styles.primaryButtonText}>Add to catalog</Text>
                     <Ionicons name="add-circle" size={18} color="#ffffff" />
@@ -3016,7 +3705,7 @@ export default function App() {
 
       <View style={styles.tabBar}>
         {(role === 'vendor'
-          ? (['Dashboard', 'Products', 'Reels', 'Chats', 'Studio'] as Tab[])
+          ? (['Dashboard', 'Products', 'Orders', 'Chats', 'Studio'] as Tab[])
           : (['Home', 'Explore', 'Orders', 'Chats', 'Profile'] as Tab[])
         ).map((tab) => {
           const isActive = activeTab === tab;
@@ -3050,6 +3739,34 @@ export default function App() {
           );
         })}
       </View>
+      {offerSheetListing && (
+        <MakeOfferSheet
+          visible={!!offerSheetListing}
+          onClose={() => setOfferSheetListing(null)}
+          listingId={offerSheetListing.id}
+          listingAmount={parseFloat(offerSheetListing.price.replace(/[^0-9.]/g, '')) || 0}
+          listingTitle={offerSheetListing.title}
+        />
+      )}
+      {counterOfferSheetData && (
+        <CounterOfferSheet
+          visible={!!counterOfferSheetData}
+          onClose={() => setCounterOfferSheetData(null)}
+          previousOffer={counterOfferSheetData.previousOffer}
+          listingTitle={counterOfferSheetData.listingTitle}
+        />
+      )}
+      <CheckoutFlowModal
+        visible={!!activeCheckoutTarget}
+        checkoutTarget={activeCheckoutTarget}
+        onClose={() => setActiveCheckoutTarget(null)}
+        onOrderCompleted={handleOrderCompleted}
+        onViewOrdersRequested={() => {
+          setActiveCheckoutTarget(null);
+          setActiveTab('Orders');
+        }}
+      />
+      {checkoutModal}
     </SafeAreaView>
   );
 }
@@ -3067,7 +3784,7 @@ function ListingCard({
 }) {
   return (
     <Pressable onPress={onOpen} style={styles.listingCard}>
-      <ImageBackground source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} imageStyle={styles.listingImage} style={styles.listingMedia}>
+      <ImageBackground source={typeof listing.image === 'string' ? { uri: listing.image } : listing.image} imageStyle={styles.listingImage} style={styles.listingMedia} resizeMode="cover">
         <LinearGradient colors={['transparent', 'rgba(31, 74, 115, 0.75)']} style={styles.mediaShade}>
           <View style={[styles.priceTag, { backgroundColor: listing.tint }]}>
             <Text style={styles.priceText}>{listing.price}</Text>
@@ -3111,7 +3828,7 @@ function ListingCard({
 const styles = StyleSheet.create({
   appShell: {
     flex: 1,
-    backgroundColor: '#FEFEFE',
+    backgroundColor: '#EFF3FF',
   },
   loadingShell: {
     flex: 1,
@@ -3154,6 +3871,7 @@ const styles = StyleSheet.create({
   },
   authShell: {
     flex: 1,
+    backgroundColor: '#F8F7FF',
   },
   authScroll: {
     flexGrow: 1,
@@ -3183,15 +3901,15 @@ const styles = StyleSheet.create({
   },
   authPanel: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 22,
     gap: 12,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: 'rgba(110, 66, 225, 0.12)',
     shadowColor: '#6E42E1',
     shadowOpacity: 0.08,
-    shadowRadius: 20,
-    elevation: 8,
+    shadowRadius: 18,
+    elevation: 6,
   },
   segmentedControl: {
     flexDirection: 'row',
@@ -3378,7 +4096,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   authSubmitButton: {
-    backgroundColor: '#6E42E1',
+    backgroundColor: COLORS.accent,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
@@ -3499,7 +4217,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   primaryButton: {
-    backgroundColor: '#6E42E1',
+    backgroundColor: COLORS.accent,
     borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
@@ -3524,17 +4242,21 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 132,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 150,
   },
   topCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 10,
+    borderRadius: 28,
+    padding: 22,
+    marginTop: 8,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.25)',
+    overflow: 'hidden',
+    shadowColor: '#5646E4',
+    shadowOpacity: 0.24,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
   topBar: {
     flexDirection: 'row',
@@ -3570,14 +4292,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   profilePill: {
-    width: 45,
-    height: 45,
-    borderRadius: 23,
-    backgroundColor: '#F4F1FE',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.25)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   profileInitial: {
     color: '#5B38C9',
@@ -3585,10 +4312,26 @@ const styles = StyleSheet.create({
   },
   heroLine: {
     color: '#ffffff',
-    fontSize: 22,
-    lineHeight: 29,
+    fontSize: 20,
+    lineHeight: 26,
     fontWeight: '900',
-    marginTop: 18,
+    marginTop: 12,
+  },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 12,
+    gap: 6,
+  },
+  heroBadgeText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
   },
   needRow: {
     marginTop: 14,
@@ -3608,8 +4351,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   needChipActive: {
-    backgroundColor: '#6E42E1',
-    borderColor: '#6E42E1',
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
   },
   needChipText: {
     color: '#655A88',
@@ -3659,17 +4402,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   mostOrderedCard: {
-    width: 188,
-    borderRadius: 12,
+    width: 190,
+    borderRadius: 14,
     overflow: 'hidden',
     backgroundColor: '#FFFFFF',
     marginRight: 12,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(110, 66, 225, 0.14)',
   },
   mostOrderedImage: {
     width: '100%',
     height: 120,
+    backgroundColor: '#F4F1FE',
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
   },
   mostOrderedBody: {
     padding: 12,
@@ -3705,13 +4451,15 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   promoBanner: {
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
-    minHeight: 170,
+    minHeight: 180,
     justifyContent: 'flex-end',
   },
   promoBannerImageStyle: {
-    borderRadius: 12,
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
   promoBannerShade: {
     flex: 1,
@@ -3746,17 +4494,20 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   lunchCard: {
-    width: 170,
-    borderRadius: 12,
+    width: 176,
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
     marginRight: 12,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(110, 66, 225, 0.14)',
     overflow: 'hidden',
   },
   lunchImage: {
     width: '100%',
     height: 110,
+    backgroundColor: '#F4F1FE',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
   },
   lunchInfo: {
     padding: 12,
@@ -3797,15 +4548,20 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   vendorRevenueCard: {
-    borderRadius: 12,
+    borderRadius: 14,
     padding: 18,
-    marginBottom: 12,
+    marginBottom: 14,
     minHeight: 134,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.25)',
+    borderColor: 'rgba(155, 92, 255, 0.2)',
+    shadowColor: '#3B3FB8',
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
   revenueLabel: {
     color: 'rgba(255, 255, 255, 0.85)',
@@ -3881,15 +4637,15 @@ const styles = StyleSheet.create({
   vendorActionCard: {
     flexBasis: '48%',
     flexGrow: 1,
-    minHeight: 70,
+    minHeight: 78,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
-    padding: 12,
+    borderColor: 'rgba(110, 66, 225, 0.14)',
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    gap: 10,
   },
   vendorActionText: {
     flex: 1,
@@ -4004,15 +4760,20 @@ const styles = StyleSheet.create({
   },
   vendorProductCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 15,
+    borderRadius: 18,
+    padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(110, 66, 225, 0.14)',
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
   vendorProductTop: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   vendorProductIcon: {
@@ -4028,6 +4789,7 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 16,
     backgroundColor: '#F4F1FE',
+    overflow: 'hidden',
   },
   vendorProductPrice: {
     color: '#5B38C9',
@@ -4145,15 +4907,20 @@ const styles = StyleSheet.create({
   editorInput: { borderWidth: 1, borderColor: 'rgba(155, 92, 255, 0.2)', borderRadius: 12, padding: 10, marginTop: 6, marginBottom: 12, backgroundColor: '#F4F1FE', color: '#241150' },
   vendorListingCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 15,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(155, 92, 255, 0.16)',
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   vendorListingTop: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
   },
   vendorListingDescription: {
@@ -4171,7 +4938,7 @@ const styles = StyleSheet.create({
   purchaseButton: {
     flexGrow: 1,
     minWidth: 132,
-    backgroundColor: '#6E42E1',
+    backgroundColor: COLORS.accent,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -4187,7 +4954,7 @@ const styles = StyleSheet.create({
   bargainButton: {
     flexGrow: 1,
     minWidth: 132,
-    backgroundColor: '#F4F1FE',
+    backgroundColor: '#FEF3C7',
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 14,
@@ -4196,14 +4963,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 7,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.3)',
+    borderColor: '#F59E0B',
   },
   bargainButtonDisabled: {
     backgroundColor: '#FFFFFF',
     borderColor: 'rgba(155, 92, 255, 0.1)',
   },
   bargainButtonText: {
-    color: '#5B38C9',
+    color: '#92400E',
     fontWeight: '900',
   },
   bargainButtonTextDisabled: {
@@ -4211,39 +4978,45 @@ const styles = StyleSheet.create({
   },
   searchCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.25)',
+    borderColor: 'rgba(110, 66, 225, 0.16)',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
   searchInput: {
     flex: 1,
     color: '#241150',
     fontSize: 16,
     fontWeight: '800',
+    paddingVertical: 2,
   },
   categoryRow: {
     marginVertical: 16,
   },
   categoryChip: {
-    minHeight: 34,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 17,
-    backgroundColor: '#FFFFFF',
+    minHeight: 36,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 18,
+    backgroundColor: '#F7F4FF',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(110, 66, 225, 0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   categoryChipActive: {
-    backgroundColor: 'rgba(91, 56, 201, 0.14)',
-    borderColor: '#5B38C9',
+    backgroundColor: 'rgba(91, 56, 201, 0.16)',
+    borderColor: '#6E42E1',
   },
   categoryChipText: {
     color: '#655A88',
@@ -4257,7 +5030,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     marginBottom: 12,
-    marginTop: 4,
+    marginTop: 10,
   },
   sectionTitle: {
     color: '#241150',
@@ -4271,20 +5044,25 @@ const styles = StyleSheet.create({
   },
   listingCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginBottom: 16,
+    borderRadius: 22,
+    marginBottom: 18,
     overflow: 'hidden',
-    borderWidth: 0,
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
+    borderWidth: 1,
+    borderColor: 'rgba(110, 66, 225, 0.14)',
+    elevation: 4,
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.1,
     shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 8 },
   },
   listingMedia: {
+    width: '100%',
     height: 158,
+    backgroundColor: '#F4F1FE',
   },
   listingImage: {
+    width: '100%',
+    height: '100%',
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
   },
@@ -4318,7 +5096,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listingTitle: {
-    color: '#241150',
+    color: COLORS.text,
     fontSize: 19,
     fontWeight: '900',
   },
@@ -4439,7 +5217,7 @@ const styles = StyleSheet.create({
   },
   darkButton: {
     flex: 1,
-    backgroundColor: '#6E42E1',
+    backgroundColor: COLORS.accent,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
@@ -4464,6 +5242,184 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   lightButtonText: {
+    color: COLORS.brand,
+    fontWeight: '900',
+  },
+  lightButtonDisabled: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(110, 66, 225, 0.18)',
+  },
+  lightButtonTextDisabled: {
+    color: '#B3A8CE',
+  },
+  offerPanel: {
+    backgroundColor: '#F7F2FF',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(155, 92, 225, 0.15)',
+  },
+  offerPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+  offerPanelTitle: {
+    color: '#241150',
+    fontWeight: '900',
+    fontSize: 15,
+  },
+  offerPanelMeta: {
+    color: '#655A88',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  offerPanelStatus: {
+    color: COLORS.brand,
+    fontWeight: '900',
+    fontSize: 12,
+  },
+  offerPanelCopy: {
+    color: '#655A88',
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 12,
+  },
+  offerTape: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  offerTapeItem: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(155, 92, 225, 0.12)',
+  },
+  offerTapeItemCurrent: {
+    borderColor: COLORS.action,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+  },
+  offerTapeItemMuted: {
+    opacity: 0.72,
+  },
+  offerTapeLabel: {
+    color: '#655A88',
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  offerTapeValue: {
+    color: '#241150',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  offerTapeValueCurrent: {
+    color: COLORS.brand,
+  },
+  checkoutOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(31, 74, 115, 0.32)',
+    justifyContent: 'flex-end',
+  },
+  checkoutSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+  },
+  checkoutTitle: {
+    color: '#241150',
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 6,
+  },
+  checkoutCaption: {
+    color: '#655A88',
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 18,
+  },
+  checkoutItem: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    marginBottom: 18,
+  },
+  checkoutImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 18,
+  },
+  checkoutInfo: {
+    flex: 1,
+  },
+  checkoutItemTitle: {
+    color: '#241150',
+    fontWeight: '900',
+    fontSize: 16,
+    marginBottom: 2,
+  },
+  checkoutItemVendor: {
+    color: '#6E42E1',
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  checkoutItemMeta: {
+    color: '#655A88',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  checkoutLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(155, 92, 225, 0.15)',
+  },
+  checkoutLineLabel: {
+    color: '#655A88',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  checkoutAmount: {
+    color: '#241150',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  checkoutActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  checkoutConfirmButton: {
+    flex: 1,
+    backgroundColor: COLORS.action,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkoutConfirmText: {
+    color: '#ffffff',
+    fontWeight: '900',
+  },
+  checkoutCancelButton: {
+    flex: 1,
+    backgroundColor: '#F4F1FE',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkoutCancelText: {
     color: '#5B38C9',
     fontWeight: '900',
   },
@@ -4574,13 +5530,18 @@ const styles = StyleSheet.create({
   },
   chatRow: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 14,
     marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.18)',
+    borderColor: 'rgba(155, 92, 255, 0.16)',
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   chatAvatar: {
     width: 48,
@@ -5090,6 +6051,239 @@ const styles = StyleSheet.create({
     lineHeight: 23,
     marginTop: 5,
   },
+  orderSummaryStrip: {
+    marginBottom: 20,
+    marginTop: 10,
+  },
+  orderSummaryContent: {
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  orderSummaryChip: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#E8E2F7',
+  },
+  orderSummaryChipActive: {
+    backgroundColor: '#6E42E1',
+    borderColor: '#6E42E1',
+  },
+  orderSummaryChipText: {
+    color: '#655A88',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  orderSummaryChipTextActive: {
+    color: '#FFFFFF',
+  },
+  orderSummaryChipCount: {
+    opacity: 0.7,
+  },
+  ordersListContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  orderCardNew: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 3,
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    borderWidth: 1,
+    borderColor: 'rgba(155, 92, 255, 0.12)',
+  },
+  orderCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  orderCardAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F4F1FE',
+  },
+  orderCardVendorInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  orderCardVendorName: {
+    fontWeight: '800',
+    fontSize: 15,
+    color: '#241150',
+  },
+  orderCardDate: {
+    fontSize: 12,
+    color: '#655A88',
+    marginTop: 2,
+  },
+  statusBadgeNew: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeTextNew: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  badgeYellow: { backgroundColor: '#FFF9E6' },
+  badgeTextYellow: { color: '#B38B00' },
+  badgeGreen: { backgroundColor: '#E6F9F0' },
+  badgeTextGreen: { color: '#008C4A' },
+  badgeBlue: { backgroundColor: '#E6F0FF' },
+  badgeTextBlue: { color: '#0052CC' },
+  badgeRed: { backgroundColor: '#FFE6E6' },
+  badgeTextRed: { color: '#CC0000' },
+  orderCardBodyNew: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#F4F1FE',
+    paddingTop: 12,
+  },
+  orderCardItem: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#3B2A6B',
+    flex: 1,
+  },
+  orderCardAmount: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#6E42E1',
+  },
+  orderDetailOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(36, 17, 80, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  orderDetailContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: '85%',
+    padding: 20,
+  },
+  orderDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  orderDetailTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#241150',
+  },
+  orderDetailHero: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  orderDetailHeroImg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 12,
+  },
+  orderDetailItem: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#241150',
+    textAlign: 'center',
+  },
+  orderDetailVendor: {
+    fontSize: 14,
+    color: '#655A88',
+    marginTop: 4,
+  },
+  orderDetailAmount: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#6E42E1',
+    marginTop: 8,
+  },
+  orderDetailBox: {
+    backgroundColor: '#F4F1FE',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  orderDetailLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#6E42E1',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  orderDetailValue: {
+    fontSize: 14,
+    color: '#3B2A6B',
+    lineHeight: 20,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  timelineDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#6E42E1',
+    marginTop: 6,
+    marginRight: 12,
+  },
+  timelineContent: {
+    flex: 1,
+  },
+  timelineTime: {
+    fontSize: 12,
+    color: '#9A8CBF',
+    marginBottom: 2,
+  },
+  timelineText: {
+    fontSize: 14,
+    color: '#241150',
+    fontWeight: '700',
+  },
+  orderDetailActions: {
+    marginTop: 10,
+    marginBottom: 40,
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: '#6E42E1',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#6E42E1',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(36, 17, 80, 0.5)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    elevation: 10,
+  },
   buyerOrderCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -5142,21 +6336,29 @@ const styles = StyleSheet.create({
   },
   profileScreenHeader: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(155, 92, 255, 0.16)',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 5,
   },
   profileScreenAvatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#F4F1FE',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(155, 92, 255, 0.18)',
   },
   profileScreenInitial: {
     color: '#FFFFFF',
@@ -5175,14 +6377,14 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   profileEditButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F4F1FE',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EFF2FF',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(155, 92, 255, 0.18)',
   },
   profileStatsRow: {
     flexDirection: 'row',
@@ -5192,10 +6394,10 @@ const styles = StyleSheet.create({
   profileStatCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(110, 66, 225, 0.14)',
   },
   profileStatValue: {
     color: '#241150',
@@ -5221,62 +6423,76 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 12,
+    left: 14,
+    right: 14,
+    bottom: 14,
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 22,
     flexDirection: 'row',
-    padding: 7,
+    padding: 10,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.25)',
-    shadowColor: '#744BDC',
-    shadowOpacity: 0.25,
+    borderColor: 'rgba(110, 66, 225, 0.14)',
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.16,
     shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
     elevation: 9,
   },
   tabButton: {
     flex: 1,
     minWidth: 0,
-    minHeight: 52,
+    minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 2,
-    borderRadius: 6,
-    gap: 3,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    gap: 4,
+    marginHorizontal: 3,
   },
   tabButtonActive: {
-    backgroundColor: 'rgba(110, 66, 225, 0.12)',
-    borderWidth: 1,
-    borderColor: '#6E42E1',
+    backgroundColor: 'rgba(20, 184, 166, 0.16)',
+    borderWidth: 0,
+    shadowColor: COLORS.accent,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
   },
   tabText: {
     color: '#655A88',
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '900',
+    letterSpacing: 0.5,
+    marginTop: 2,
   },
   tabTextActive: {
-    color: '#6E42E1',
+    color: COLORS.accent,
   },
   
   // Customer Profile Styles
   profileReadOnlySection: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 20,
+    borderRadius: 24,
+    padding: 22,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(110, 66, 225, 0.14)',
     alignItems: 'center',
+    shadowColor: '#6E42E1',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
   },
   profilePhotoLarge: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 108,
+    height: 108,
+    borderRadius: 54,
     overflow: 'hidden',
-    marginBottom: 16,
+    marginBottom: 18,
     backgroundColor: '#F4F1FE',
+    borderWidth: 1,
+    borderColor: 'rgba(155, 92, 255, 0.14)',
   },
   profilePhotoImage: {
     width: '100%',
@@ -5396,12 +6612,12 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   profileEditablePreview: {
-    backgroundColor: '#F4F1FE',
-    borderRadius: 12,
+    backgroundColor: '#F8F5FF',
+    borderRadius: 18,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.2)',
+    borderColor: 'rgba(155, 92, 255, 0.16)',
   },
   profileSectionTitle: {
     fontSize: 14,
@@ -5460,17 +6676,22 @@ const styles = StyleSheet.create({
     color: '#241150',
   },
   profilePhotoEditBox: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#F4F1FE',
-    borderWidth: 2,
-    borderColor: '#6E42E1',
+    width: 110,
+    height: 110,
     alignSelf: 'center',
     marginBottom: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: 'relative',
+  },
+  avatarCircleInner: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    backgroundColor: '#EEF2FF',
+    borderWidth: 2.5,
+    borderColor: '#4F46E5',
     overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   profilePhotoImageEdit: {
     width: '100%',
@@ -5478,16 +6699,21 @@ const styles = StyleSheet.create({
   },
   photoEditBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#6E42E1',
+    bottom: 2,
+    right: 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#4F46E5',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#ffffff',
+    borderColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
   },
   profileEditSection: {
     marginBottom: 16,

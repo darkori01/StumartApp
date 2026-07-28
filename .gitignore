@@ -36,9 +36,11 @@ yarn-error.*
 # server runtime database (JSON file store)
 server/data.json
 
-# typescript
-*.tsbuildinfo
+# local reference files & IDE
+.vscode/
+window.xml
+/chats.png
+/customer-home-reference.png
+/stumart-home.png
 
-# generated native folders
-/ios
-/android
+
