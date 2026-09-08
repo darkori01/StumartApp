@@ -956,7 +956,7 @@ export default function App() {
           }
         }
       },
-      (error) => console.error('User attempts subscription error:', error)
+      (error) => console.error('[USER ATTEMPTS subscription] error:', (error as any).code, (error as any).message)
     );
     return () => unsubscribe();
   }, [auth.currentUser?.uid]);
@@ -965,16 +965,16 @@ export default function App() {
     if (!auth.currentUser || role !== 'vendor') return;
     const q = query(
       collection(db, 'orders'),
-      where('sellerId', '==', auth.currentUser.uid),
-      orderBy('createdAt', 'desc')
+      where('sellerId', '==', auth.currentUser.uid)
     );
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const liveOrders = snapshot.docs.map((d) => d.data() as Order);
+        liveOrders.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
         setVendorOrders(liveOrders);
       },
-      (error) => console.error('Vendor orders subscription error:', error)
+      (error) => console.error('[VENDOR ORDERS subscription] error:', (error as any).code, (error as any).message)
     );
     return () => unsubscribe();
   }, [auth.currentUser?.uid, role]);
@@ -984,15 +984,16 @@ export default function App() {
     const q = query(
       collection(db, 'offers'),
       where('sellerId', '==', auth.currentUser.uid),
-      where('status', '==', 'pending'),
-      orderBy('createdAt', 'desc')
+      where('status', '==', 'pending')
     );
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        setPendingOffers(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as BargainOffer)));
+        const offers = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as BargainOffer));
+        offers.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+        setPendingOffers(offers);
       },
-      (error) => console.error('Pending offers subscription error:', error)
+      (error) => console.error('[PENDING OFFERS subscription] error:', (error as any).code, (error as any).message)
     );
     return () => unsubscribe();
   }, [auth.currentUser?.uid, role]);
@@ -1001,13 +1002,13 @@ export default function App() {
     if (!auth.currentUser || role !== 'customer') return;
     const q = query(
       collection(db, 'offers'),
-      where('buyerId', '==', auth.currentUser.uid),
-      orderBy('createdAt', 'desc')
+      where('buyerId', '==', auth.currentUser.uid)
     );
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
         const liveOffers = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as BargainOffer));
+        liveOffers.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
         setCustomerOffers(liveOffers);
 
         liveOffers.forEach((offer) => {
@@ -1086,7 +1087,7 @@ export default function App() {
           }
         });
       },
-      (error) => console.error('Customer offers subscription error:', error)
+      (error) => console.error('[CUSTOMER OFFERS subscription] error:', (error as any).code, (error as any).message)
     );
     return () => unsubscribe();
   }, [auth.currentUser?.uid, role, marketListings]);

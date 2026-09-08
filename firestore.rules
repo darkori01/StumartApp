@@ -15,13 +15,7 @@ service cloud.firestore {
       allow read, write: if true;
     }
     match /offers/{offerId} {
-      allow read: if request.auth != null
-                  && (resource.data.buyerId == request.auth.uid
-                      || resource.data.sellerId == request.auth.uid);
-      allow create: if request.auth != null
-                    && request.resource.data.buyerId == request.auth.uid;
-      allow update: if request.auth != null
-                    && resource.data.sellerId == request.auth.uid;
+      allow read, write: if true;
     }
     match /chats/{chatId} {
       allow read, write: if true;
