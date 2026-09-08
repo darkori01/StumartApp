@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -10,7 +10,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +17,7 @@ import {
   Switch,
   View,
 } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { OfferButton } from './src/features/offers/components/OfferButton';
 import { MakeOfferSheet } from './src/features/offers/components/MakeOfferSheet';
@@ -25,10 +25,22 @@ import { CounterOfferSheet } from './src/features/offers/components/CounterOffer
 import { OfferMessageCard } from './src/features/offers/components/OfferMessageCard';
 import { ListingOfferToggle } from './src/features/offers/ListingOfferToggle';
 import { useOffers, useOfferActions } from './src/features/offers/hooks';
-import { Offer } from './src/features/offers/types';
+import { Offer, BargainOffer } from './src/features/offers/types';
 import { CheckoutFlowModal } from './src/features/checkout/CheckoutFlowModal';
 import { CheckoutTarget, Order } from './src/features/checkout/types';
 import { SettingsScreen } from './src/features/settings/SettingsScreen';
+import { auth, db } from './src/services/firebaseConfig';
+import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
+
+const showNotification = (title: string, message: string) => {
+  Alert.alert(title, message);
+};
+
+const parsePriceNumber = (priceStr: string | number): number => {
+  if (typeof priceStr === 'number') return priceStr;
+  if (!priceStr) return 0;
+  return parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0;
+};
 
 // Backend base URL. Override with EXPO_PUBLIC_API_URL (e.g. your LAN IP
 // "http://192.168.1.20:4000" for a physical device). Defaults differ by
@@ -138,6 +150,8 @@ type Listing = {
   image: string;
   tint: string;
   tags: string[];
+  vendorId?: string;
+  bargainPrice?: number;
 };
 
 type Reel = {
@@ -500,7 +514,7 @@ const demoVendorName = 'Ama Beauty Lab';
 
 const exploreTiles = [
   { title: 'Beauty & Hair', subtitle: 'Wigs, glam, lashes', icon: 'sparkles-outline' as IconName, color: '#6E42E1' },
-  { title: 'Barbering & Grooming', subtitle: 'Fades, lineups, beards', icon: 'scissors-outline' as IconName, color: '#D97706' },
+  { title: 'Barbering & Grooming', subtitle: 'Fades, lineups, beards', icon: 'cut-outline' as IconName, color: '#D97706' },
   { title: 'Tech & Repair', subtitle: 'Phones, laptops, screens', icon: 'hardware-chip-outline' as IconName, color: '#0284C7' },
   { title: 'Design & Branding', subtitle: 'Logos, flyers, social kits', icon: 'color-palette-outline' as IconName, color: '#5B38C9' },
   { title: 'Food & Bakes', subtitle: 'Jollof, cakes, snacks', icon: 'restaurant-outline' as IconName, color: '#16A34A' },
@@ -877,6 +891,7 @@ export default function App() {
   const [selectedListing, setSelectedListing] = useState<Listing | null>(listings[0]);
   const [vendorPageListing, setVendorPageListing] = useState<Listing | null>(null);
   const [studioMode, setStudioMode] = useState<StudioMode>('menu');
+  const [showAddListingModal, setShowAddListingModal] = useState(false);
   const [newListingKind, setNewListingKind] = useState<ListingKind>('Skill');
   const [newListingCategory, setNewListingCategory] = useState<string>('Tech & Repair');
   const [newListingTitle, setNewListingTitle] = useState('');
@@ -891,6 +906,190 @@ export default function App() {
   // Messages loaded from the backend, keyed by deterministic conversationId.
   const [serverMessagesByConversation, setServerMessagesByConversation] = useState<Record<string, ChatMessage[]>>({});
   const [search, setSearch] = useState('');
+
+  const [vendorOrders, setVendorOrders] = useState<Order[]>([]);
+  const [pendingOffers, setPendingOffers] = useState<BargainOffer[]>([]);
+  const [customerOffers, setCustomerOffers] = useState<BargainOffer[]>([]);
+  const [offerAttemptsRemaining, setOfferAttemptsRemaining] = useState<number>(3);
+  const processedOfferEventsRef = useRef<Record<string, string>>({});
+
+  const getCurrentWeekStart = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    return monday.toISOString().split('T')[0];
+  };
+
+  const getOrResetOfferAttempts = async (): Promise<number> => {
+    if (!auth.currentUser) return 3;
+    const userRef = doc(db, 'users', auth.currentUser.uid);
+    const userSnap = await getDoc(userRef);
+    const data = userSnap.data();
+    const currentWeekStart = getCurrentWeekStart();
+    if (!data?.offerAttemptsWeekStart || data.offerAttemptsWeekStart !== currentWeekStart) {
+      await setDoc(userRef, {
+        offerAttemptsRemaining: 3,
+        offerAttemptsWeekStart: currentWeekStart,
+      }, { merge: true });
+      return 3;
+    }
+    return typeof data.offerAttemptsRemaining === 'number' ? data.offerAttemptsRemaining : 3;
+  };
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    getOrResetOfferAttempts().then((val) => setOfferAttemptsRemaining(val));
+    const userRef = doc(db, 'users', auth.currentUser.uid);
+    const unsubscribe = onSnapshot(
+      userRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          const currentWeekStart = getCurrentWeekStart();
+          if (!data?.offerAttemptsWeekStart || data.offerAttemptsWeekStart !== currentWeekStart) {
+            getOrResetOfferAttempts().then((val) => setOfferAttemptsRemaining(val));
+          } else if (typeof data.offerAttemptsRemaining === 'number') {
+            setOfferAttemptsRemaining(data.offerAttemptsRemaining);
+          }
+        }
+      },
+      (error) => console.error('User attempts subscription error:', error)
+    );
+    return () => unsubscribe();
+  }, [auth.currentUser?.uid]);
+
+  useEffect(() => {
+    if (!auth.currentUser || role !== 'vendor') return;
+    const q = query(
+      collection(db, 'orders'),
+      where('sellerId', '==', auth.currentUser.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const liveOrders = snapshot.docs.map((d) => d.data() as Order);
+        setVendorOrders(liveOrders);
+      },
+      (error) => console.error('Vendor orders subscription error:', error)
+    );
+    return () => unsubscribe();
+  }, [auth.currentUser?.uid, role]);
+
+  useEffect(() => {
+    if (!auth.currentUser || role !== 'vendor') return;
+    const q = query(
+      collection(db, 'offers'),
+      where('sellerId', '==', auth.currentUser.uid),
+      where('status', '==', 'pending'),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        setPendingOffers(snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as BargainOffer)));
+      },
+      (error) => console.error('Pending offers subscription error:', error)
+    );
+    return () => unsubscribe();
+  }, [auth.currentUser?.uid, role]);
+
+  useEffect(() => {
+    if (!auth.currentUser || role !== 'customer') return;
+    const q = query(
+      collection(db, 'offers'),
+      where('buyerId', '==', auth.currentUser.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const liveOffers = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as BargainOffer));
+        setCustomerOffers(liveOffers);
+
+        liveOffers.forEach((offer) => {
+          const prevStatus = processedOfferEventsRef.current[offer.id];
+          if (!prevStatus) {
+            processedOfferEventsRef.current[offer.id] = offer.status;
+            return;
+          }
+          if (prevStatus !== offer.status) {
+            processedOfferEventsRef.current[offer.id] = offer.status;
+            if (offer.status === 'approved') {
+              showNotification('Offer Approved!', `Your offer of ₵${offer.offerAmount.toFixed(2)} was approved!`);
+              const matchingListing = marketListings.find((l) => l.id === offer.listingId) || {
+                id: offer.listingId,
+                vendorId: offer.sellerId,
+                title: offer.listingTitle,
+                vendor: offer.sellerName,
+                price: `GHS ${offer.offerAmount.toFixed(2)}`,
+                priceType: 'Fixed' as const,
+                image: offer.listingImage,
+                description: '',
+                category: 'General',
+                stock: 10,
+              };
+              const listPriceNum = parsePriceNumber(matchingListing.price) || offer.offerAmount;
+              const target: CheckoutTarget = {
+                listing: {
+                  ...matchingListing,
+                  price: `GHS ${offer.offerAmount.toFixed(2)}`,
+                },
+                price: `GHS ${offer.offerAmount.toFixed(2)}`,
+                unitPriceNum: offer.offerAmount,
+                originalPriceNum: listPriceNum,
+                offer: {
+                  id: offer.id,
+                  listingId: offer.listingId,
+                  threadId: 'c1',
+                  senderId: 'me',
+                  listingAmount: listPriceNum,
+                  offerAmount: offer.offerAmount,
+                  quantity: offer.quantity,
+                  round: 1,
+                  status: 'ACCEPTED',
+                  expiresAt: Date.now() + 86400000,
+                },
+                initialQuantity: offer.quantity,
+              };
+              setActiveCheckoutTarget(target);
+            } else if (offer.status === 'denied') {
+              showNotification('Offer Declined', `${offer.sellerName} declined ₵${offer.offerAmount.toFixed(2)} — try a different amount`);
+              const matchingListing = marketListings.find((l) => l.id === offer.listingId);
+              Alert.alert(
+                'Offer Declined',
+                `${offer.sellerName} declined ₵${offer.offerAmount.toFixed(2)} — try a different amount`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Resubmit Offer',
+                    onPress: async () => {
+                      const attemptsLeft = await getOrResetOfferAttempts();
+                      if (attemptsLeft <= 0) {
+                        Alert.alert(
+                          'Bargain Limit Reached',
+                          "You're out of bargain tries for this week — try Buy Now instead, or come back next week."
+                        );
+                        return;
+                      }
+                      if (matchingListing) {
+                        setOfferSheetListing(matchingListing);
+                      }
+                    },
+                  },
+                ]
+              );
+            }
+          }
+        });
+      },
+      (error) => console.error('Customer offers subscription error:', error)
+    );
+    return () => unsubscribe();
+  }, [auth.currentUser?.uid, role, marketListings]);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsLoading(false), 1200);
@@ -1261,8 +1460,14 @@ export default function App() {
     if (kind) {
       setNewListingKind(kind);
     }
-    setStudioMode('addListing');
-    setActiveTab('Studio');
+    setShowAddListingModal(true);
+  };
+
+  const closeAddListingForm = () => {
+    setShowAddListingModal(false);
+    setNewListingTitle('');
+    setNewListingPrice('');
+    setNewListingImageUri('');
   };
 
   
@@ -1394,9 +1599,6 @@ export default function App() {
     setShowProfileModal(false);
   };
 
-  const closeAddListingForm = () => {
-    setStudioMode('menu');
-  };
 
   const handleSignin = () => {
     const normalizedEmail = authEmail.trim().toLowerCase();
@@ -1531,7 +1733,7 @@ export default function App() {
     setNewListingTitle('');
     setNewListingPrice('');
     setNewListingImageUri('');
-    setStudioMode('menu');
+    setShowAddListingModal(false);
     setActiveTab('Products');
   };
 
@@ -2291,7 +2493,8 @@ export default function App() {
   }
 
   return (
-    <SafeAreaView style={styles.appShell}>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.appShell}>
       {inAppNotification && (
         <View style={{
           position: 'absolute', top: 50, left: 20, right: 20, backgroundColor: '#241150',
@@ -2620,7 +2823,7 @@ export default function App() {
             <View style={styles.ruleBox}>
               <Ionicons name="information-circle-outline" size={20} color="#5B38C9" />
               <Text style={styles.ruleText}>
-                Skills use negotiable pricing. Products use fixed pricing. Choose the listing type in Studio.
+                Skills use negotiable pricing. Products use fixed pricing. Choose the listing type when adding your listing.
               </Text>
             </View>
             {vendorListings.map((listing) => (
@@ -2881,6 +3084,116 @@ export default function App() {
 
         {role === 'vendor' && activeTab === 'Orders' && (
           <>
+            {/* Pending Bargain Offers Section */}
+            {pendingOffers.length > 0 && (
+              <View style={{ paddingHorizontal: 16, marginTop: 12, marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <Ionicons name="pricetag-outline" size={18} color="#D97706" />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#1F2937' }}>
+                    Pending Offers ({pendingOffers.length})
+                  </Text>
+                </View>
+
+                {pendingOffers.map((offer) => {
+                  const offerImg = typeof offer.listingImage === 'string' && offer.listingImage ? { uri: offer.listingImage } : null;
+                  const listingMatch = marketListings.find((l) => l.id === offer.listingId);
+                  const listedPriceVal = listingMatch ? listingMatch.price : `GHS ${(offer.offerAmount * 1.1).toFixed(2)}`;
+
+                  return (
+                    <View
+                      key={offer.id}
+                      style={{
+                        backgroundColor: '#FFFBEB',
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: '#FCD34D',
+                        padding: 14,
+                        marginBottom: 10,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        {offerImg ? (
+                          <Image source={offerImg} style={{ width: 44, height: 44, borderRadius: 8 }} resizeMode="cover" />
+                        ) : (
+                          <View style={{ width: 44, height: 44, borderRadius: 8, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name="pricetag" size={20} color="#D97706" />
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#1F2937' }} numberOfLines={1}>
+                            {offer.listingTitle}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                            Buyer: <Text style={{ fontWeight: '600', color: '#374151' }}>{offer.buyerName}</Text>
+                          </Text>
+                        </View>
+                        <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                          <Text style={{ color: '#D97706', fontSize: 10, fontWeight: '800' }}>PENDING OFFER</Text>
+                        </View>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#FDE68A' }}>
+                        <View>
+                          <Text style={{ fontSize: 14, fontWeight: '700', color: '#D97706' }}>
+                            Offered: GHS {offer.offerAmount.toFixed(2)}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: '#6B7280' }}>
+                            Listed: {listedPriceVal} | Qty: {offer.quantity}
+                          </Text>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <Pressable
+                            style={{
+                              backgroundColor: '#10B981',
+                              paddingHorizontal: 14,
+                              paddingVertical: 8,
+                              borderRadius: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                            onPress={async () => {
+                              await setDoc(doc(db, 'offers', offer.id), {
+                                status: 'approved',
+                                respondedAt: new Date().toISOString(),
+                              }, { merge: true });
+                              showNotification('Offer Approved', `Approved ₵${offer.offerAmount.toFixed(2)} offer from ${offer.buyerName}`);
+                            }}
+                          >
+                            <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
+                            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Confirm</Text>
+                          </Pressable>
+
+                          <Pressable
+                            style={{
+                              backgroundColor: '#EF4444',
+                              paddingHorizontal: 14,
+                              paddingVertical: 8,
+                              borderRadius: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                            onPress={async () => {
+                              await setDoc(doc(db, 'offers', offer.id), {
+                                status: 'denied',
+                                respondedAt: new Date().toISOString(),
+                              }, { merge: true });
+                              showNotification('Offer Denied', `Denied ₵${offer.offerAmount.toFixed(2)} offer from ${offer.buyerName}`);
+                            }}
+                          >
+                            <Ionicons name="close-circle" size={16} color="#FFFFFF" />
+                            <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>Deny</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Vendor Orders</Text>
               <View style={{flexDirection: 'row', alignItems: 'center'}}>
@@ -3565,47 +3878,18 @@ export default function App() {
           </>
         )}
 
-        {activeTab === 'Studio' && (
-          <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Vendor studio</Text>
-              <Text style={styles.sectionMeta}>{studioMode === 'addListing' ? 'New listing' : 'Add and manage'}</Text>
-            </View>
-
-            {studioMode === 'menu' ? (
-              <>
-                <LinearGradient colors={['#5B38C9', '#9B68F4']} style={styles.studioHero}>
-                  <Image source={logo} style={styles.studioLogo} resizeMode="contain" />
-                  <Text style={styles.studioTitle}>Build the front of your campus business.</Text>
-                  <Text style={styles.studioCopy}>
-                    Add products or skills, post reels, reply to customers, and keep your listings ready for orders.
-                  </Text>
-                </LinearGradient>
-
-                {[
-                  { title: 'Add product or skill', icon: 'add-circle-outline' as IconName, action: () => openAddListingForm() },
-                  { title: 'Upload reel', icon: 'cloud-upload-outline' as IconName, action: () => setActiveTab('Reels') },
-                  { title: 'View products and skills', icon: 'pricetags-outline' as IconName, action: () => setActiveTab('Products') },
-                  { title: 'Review orders and offers', icon: 'receipt-outline' as IconName, action: () => setActiveTab('Dashboard') },
-                ].map((item) => (
-                  <Pressable key={item.title} style={styles.studioAction} onPress={item.action}>
-                    <View style={styles.studioActionLeft}>
-                      <Ionicons name={item.icon} size={22} color="#6E42E1" />
-                      <Text style={styles.studioActionText}>{item.title}</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#744BDC" />
-                  </Pressable>
-                ))}
-              </>
-            ) : (
-              <>
-                <Pressable style={styles.backButton} onPress={closeAddListingForm}>
-                  <Ionicons name="chevron-back" size={19} color="#6E42E1" />
-                  <Text style={styles.backButtonText}>Back to studio</Text>
+        <Modal visible={showAddListingModal} animationType="slide" transparent={true} onRequestClose={closeAddListingForm}>
+          <View style={styles.orderDetailOverlay}>
+            <View style={[styles.orderDetailContent, { maxHeight: '90%' }]}>
+              <View style={styles.orderDetailHeader}>
+                <Text style={styles.orderDetailTitle}>Add a product or skill</Text>
+                <Pressable onPress={closeAddListingForm}>
+                  <Ionicons name="close-circle" size={28} color="#9A8CBF" />
                 </Pressable>
+              </View>
 
+              <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.addListingPanel}>
-                  <Text style={styles.detailTitle}>Add a product or skill</Text>
                   <Text style={styles.detailCopy}>
                     Choose Product for fixed pricing or Skill for negotiable pricing.
                   </Text>
@@ -3697,15 +3981,15 @@ export default function App() {
                     <Ionicons name="add-circle" size={18} color="#ffffff" />
                   </Pressable>
                 </View>
-              </>
-            )}
-          </>
-        )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </ScrollView>
 
       <View style={styles.tabBar}>
         {(role === 'vendor'
-          ? (['Dashboard', 'Products', 'Orders', 'Chats', 'Studio'] as Tab[])
+          ? (['Dashboard', 'Products', 'Orders', 'Chats'] as Tab[])
           : (['Home', 'Explore', 'Orders', 'Chats', 'Profile'] as Tab[])
         ).map((tab) => {
           const isActive = activeTab === tab;
@@ -3744,8 +4028,49 @@ export default function App() {
           visible={!!offerSheetListing}
           onClose={() => setOfferSheetListing(null)}
           listingId={offerSheetListing.id}
-          listingAmount={parseFloat(offerSheetListing.price.replace(/[^0-9.]/g, '')) || 0}
+          listingAmount={parsePriceNumber(offerSheetListing.price) || 0}
+          bargainPrice={offerSheetListing.bargainPrice ?? Math.round((parsePriceNumber(offerSheetListing.price) || 0) * 0.9)}
           listingTitle={offerSheetListing.title}
+          onSubmitOffer={async (offerAmount, quantity) => {
+            const attemptsLeft = await getOrResetOfferAttempts();
+            if (attemptsLeft <= 0) {
+              Alert.alert(
+                'Bargain Limit Reached',
+                "You're out of bargain tries for this week — try Buy Now instead, or come back next week."
+              );
+              setOfferSheetListing(null);
+              setOfferAttemptsRemaining(0);
+              return;
+            }
+            const newAttemptsLeft = attemptsLeft - 1;
+            if (auth.currentUser) {
+              await setDoc(doc(db, 'users', auth.currentUser.uid), {
+                offerAttemptsRemaining: newAttemptsLeft,
+              }, { merge: true });
+            }
+            setOfferAttemptsRemaining(newAttemptsLeft);
+
+            const offerRef = doc(collection(db, 'offers'));
+            const buyerDisplayName = auth.currentUser?.displayName || (role === 'customer' ? 'Demo Customer' : 'Customer');
+            const newOffer: BargainOffer = {
+              id: offerRef.id,
+              listingId: offerSheetListing.id,
+              listingTitle: offerSheetListing.title,
+              listingImage: typeof offerSheetListing.image === 'string' ? offerSheetListing.image : (offerSheetListing.image as any)?.uri || '',
+              buyerId: auth.currentUser?.uid || '',
+              buyerName: buyerDisplayName,
+              sellerId: offerSheetListing.vendorId || offerSheetListing.vendor,
+              sellerName: offerSheetListing.vendor,
+              quantity,
+              offerAmount,
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+            };
+            await setDoc(offerRef, newOffer);
+
+            setOfferSheetListing(null);
+            showNotification('Offer Sent', `Offer sent — waiting for ${offerSheetListing.vendor} to respond`);
+          }}
         />
       )}
       {counterOfferSheetData && (
@@ -3768,6 +4093,7 @@ export default function App() {
       />
       {checkoutModal}
     </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 

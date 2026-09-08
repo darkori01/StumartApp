@@ -1,4 +1,5 @@
 const express = require('express');
+require('dotenv').config();
 const bodyParser = require('body-parser');
 const nodemailer = require('nodemailer');
 
@@ -50,9 +51,6 @@ app.post('/send-code', async (req, res) => {
   }
 });
 
-// mount reels endpoints
-const reelsRoutes = require('./reels');
-app.use('/', reelsRoutes);
 // mount chat endpoints
 const chatRoutes = require('./chat');
 app.use('/', chatRoutes);
@@ -60,5 +58,9 @@ app.use('/', chatRoutes);
 const vendorRoutes = require('./vendor');
 app.use('/', vendorRoutes);
 
+const paystackRoutes = require('./routes/paystack');
+app.use('/paystack', paystackRoutes);
+
 // Bind on 0.0.0.0 so physical devices and emulators on the LAN can reach it.
 app.listen(PORT, '0.0.0.0', () => console.log(`Stumart server listening on 0.0.0.0:${PORT}`));
+

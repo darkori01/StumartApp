@@ -12,22 +12,22 @@ const COLORS = {
 type ListingOfferToggleProps = {
   enabled: boolean;
   onToggle: (enabled: boolean) => void;
-  minPrice?: string;
-  onSetMinPrice?: (price: string) => void;
+  listingPriceNum?: number;
 };
 
 export const ListingOfferToggle: React.FC<ListingOfferToggleProps> = ({
   enabled,
   onToggle,
-  minPrice,
-  onSetMinPrice,
+  listingPriceNum = 0,
 }) => {
+  const bargainPrice = Math.round(listingPriceNum * 0.9);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Ionicons name="pricetag-outline" size={20} color={COLORS.brand} />
-          <Text style={styles.title}>Accept Offers</Text>
+          <Text style={styles.title}>Negotiable Listing</Text>
         </View>
         <Switch
           value={enabled}
@@ -37,8 +37,25 @@ export const ListingOfferToggle: React.FC<ListingOfferToggleProps> = ({
         />
       </View>
       <Text style={styles.description}>
-        Allow buyers to negotiate the price. Items with offers enabled typically sell 30% faster.
+        Allow buyers to make pre-approved offers on this item.
       </Text>
+
+      {enabled && (
+        <View style={styles.calcBox}>
+          <View style={styles.calcRow}>
+            <Ionicons name="calculator-outline" size={16} color="#4F46E5" />
+            <Text style={styles.calcText}>
+              Actual price: ₵{listingPriceNum} → Lowest offer buyers can send: ₵{bargainPrice}
+            </Text>
+          </View>
+          <View style={styles.infoNote}>
+            <Ionicons name="information-circle-outline" size={14} color="#D97706" />
+            <Text style={styles.infoNoteText}>
+              Buyers will be able to offer any amount between ₵{bargainPrice} and ₵{listingPriceNum} (up to 10% discount).
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
@@ -72,5 +89,39 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textLight,
     lineHeight: 18,
+  },
+  calcBox: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+  },
+  calcRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  calcText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+    flex: 1,
+  },
+  infoNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    padding: 8,
+    borderRadius: 6,
+  },
+  infoNoteText: {
+    fontSize: 12,
+    color: '#92400E',
+    fontWeight: '500',
+    flex: 1,
   },
 });

@@ -16,7 +16,11 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.rokadu10.stumart"
     },
     "web": {
       "favicon": "./assets/stumart-logo.png"
@@ -28,6 +32,11 @@
           "photosPermission": "Stumart uses your photos so vendors can upload product and skill images."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b8da7b71-ba69-4a2c-9134-e3848b5c85c8"
+      }
+    }
   }
 }

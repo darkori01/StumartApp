@@ -75,6 +75,9 @@ export const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
       const last4 = digits.slice(-4) || '4242';
       return `Card ••${last4}`;
     }
+    if (selectedType === 'paystack') {
+      return 'Paystack Checkout';
+    }
     return `StuMart Wallet (Bal: GHS ${walletBalance.toFixed(2)})`;
   };
 
@@ -92,7 +95,7 @@ export const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
     if (selectedType === 'wallet') {
       return walletBalance >= totalAmount;
     }
-    return false;
+    return selectedType === 'paystack';
   };
 
   const handlePayPress = () => {
@@ -257,7 +260,39 @@ export const PaymentMethodSelector: React.FC<PaymentMethodSelectorProps> = ({
           )}
         </Pressable>
 
-        {/* 3. In-App Wallet Option */}
+        {/* 3. Paystack Option */}
+        <Pressable
+          style={[styles.cardOption, selectedType === 'paystack' && styles.cardOptionSelectedPaystack]}
+          onPress={() => setSelectedType('paystack')}
+        >
+          <View style={styles.cardHeader}>
+            <View style={styles.iconCirclePaystack}>
+              <Ionicons name="globe-outline" size={22} color="#111827" />
+            </View>
+            <View style={styles.cardTitleWrap}>
+              <Text style={styles.cardTitle}>Paystack</Text>
+              <Text style={styles.cardSubtitle}>Card, bank transfer, USSD, and Mobile Money</Text>
+            </View>
+            <Ionicons
+              name={selectedType === 'paystack' ? 'radio-button-on' : 'radio-button-off'}
+              size={22}
+              color={selectedType === 'paystack' ? '#EAB308' : '#CBD5E1'}
+            />
+          </View>
+
+          {selectedType === 'paystack' && (
+            <View style={styles.inlineForm}>
+              <View style={styles.paystackInfoBox}>
+                <Ionicons name="shield-checkmark-outline" size={16} color="#A16207" />
+                <Text style={styles.paystackInfoText}>
+                  You will be securely redirected to Paystack to complete your payment.
+                </Text>
+              </View>
+            </View>
+          )}
+        </Pressable>
+
+        {/* 4. In-App Wallet Option */}
         <Pressable
           style={[styles.cardOption, selectedType === 'wallet' && styles.cardOptionSelected]}
           onPress={() => setSelectedType('wallet')}
@@ -367,6 +402,10 @@ const styles = StyleSheet.create({
     borderColor: '#7C3AED',
     backgroundColor: '#FAF5FF',
   },
+  cardOptionSelectedPaystack: {
+    borderColor: '#EAB308',
+    backgroundColor: '#FEFCE8',
+  },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -393,6 +432,14 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 21,
     backgroundColor: '#D1FAE5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconCirclePaystack: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#FDE68A',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -525,6 +572,19 @@ const styles = StyleSheet.create({
   walletInfoText: {
     fontSize: 12,
     color: '#065F46',
+    flex: 1,
+  },
+  paystackInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    padding: 10,
+    borderRadius: 8,
+    gap: 6,
+  },
+  paystackInfoText: {
+    fontSize: 12,
+    color: '#92400E',
     flex: 1,
   },
   footer: {

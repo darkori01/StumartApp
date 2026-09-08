@@ -19,8 +19,9 @@ interface MakeOfferSheetProps {
   onClose: () => void;
   listingId: string;
   listingAmount: number;
+  bargainPrice?: number;
   listingTitle: string;
-  threadId?: string;
+  onSubmitOffer: (offerAmount: number, quantity: number) => void;
 }
 
 export const MakeOfferSheet: React.FC<MakeOfferSheetProps> = ({
@@ -28,41 +29,54 @@ export const MakeOfferSheet: React.FC<MakeOfferSheetProps> = ({
   onClose,
   listingId,
   listingAmount,
+  bargainPrice,
   listingTitle,
-  threadId = 'c1', // mock default thread
+  onSubmitOffer,
 }) => {
   const [amountStr, setAmountStr] = useState('');
   const [quantityStr, setQuantityStr] = useState('1');
-  const { submitOffer } = useOfferActions();
 
   const amount = parseInt(amountStr.replace(/[^0-9]/g, ''), 10) || 0;
   const quantity = parseInt(quantityStr.replace(/[^0-9]/g, ''), 10) || 1;
 
-  const getHint = () => {
-    if (!amount) return null;
-    const ratio = amount / listingAmount;
-    if (ratio >= 0.9) return { text: 'Likely to be accepted', color: '#10B981' };
-    if (ratio >= 0.7) return { text: 'Fair offer', color: '#F59E0B' };
-    return { text: 'This may take a counter-offer', color: '#6B7280' };
+  const floorPrice = bargainPrice ?? Math.round(listingAmount * 0.9);
+  const ceilingPrice = listingAmount;
+
+  const getValidationFeedback = () => {
+    if (!amountStr) {
+      return {
+        text: `Enter an amount between ₵${floorPrice} and ₵${ceilingPrice}`,
+        color: '#6B7280',
+        isValid: false,
+      };
+    }
+    if (amount < floorPrice) {
+      return {
+        text: `Minimum offer is ₵${floorPrice}`,
+        color: '#EF4444',
+        isValid: false,
+      };
+    }
+    if (amount > ceilingPrice) {
+      return {
+        text: `Maximum offer is ₵${ceilingPrice}`,
+        color: '#EF4444',
+        isValid: false,
+      };
+    }
+    return {
+      text: `Offer in pre-approved range (₵${floorPrice} – ₵${ceilingPrice})`,
+      color: '#10B981',
+      isValid: true,
+    };
   };
 
-  const hint = getHint();
-  const isValid = amount > 0 && quantity > 0;
+  const feedback = getValidationFeedback();
+  const isValid = feedback.isValid && quantity > 0;
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!isValid) return;
-    await submitOffer({
-      id: Math.random().toString(36).substring(7),
-      listingId,
-      threadId,
-      senderId: 'me',
-      listingAmount,
-      offerAmount: amount,
-      quantity,
-      round: 1,
-      status: 'PENDING',
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-    });
+    onSubmitOffer(amount, quantity);
     setAmountStr('');
     setQuantityStr('1');
     onClose();
@@ -87,22 +101,31 @@ export const MakeOfferSheet: React.FC<MakeOfferSheetProps> = ({
               <Text style={styles.subtitle}>{listingTitle}</Text>
               <Text style={styles.listedPrice}>Listed at GHS {listingAmount}</Text>
 
+              <View style={styles.rangeBox}>
+                <Ionicons name="pricetag-outline" size={16} color="#4F46E5" />
+                <Text style={styles.rangeText}>
+                  Offer between ₵{floorPrice} and ₵{ceilingPrice}.
+                </Text>
+              </View>
+
               <View style={styles.form}>
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Your Offer (GHS)</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[
+                      styles.input,
+                      amountStr !== '' && !feedback.isValid && styles.inputError,
+                      feedback.isValid && styles.inputSuccess,
+                    ]}
                     keyboardType="numeric"
                     value={amountStr}
                     onChangeText={setAmountStr}
-                    placeholder="0"
+                    placeholder={`e.g. ${floorPrice}`}
                     placeholderTextColor="#9CA3AF"
                   />
-                  {hint && (
-                    <Text style={[styles.hintText, { color: hint.color }]}>
-                      {hint.text}
-                    </Text>
-                  )}
+                  <Text style={[styles.hintText, { color: feedback.color }]}>
+                    {feedback.text}
+                  </Text>
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -135,7 +158,7 @@ export const MakeOfferSheet: React.FC<MakeOfferSheetProps> = ({
                 onPress={handleSubmit}
                 disabled={!isValid}
               >
-                <Text style={styles.submitBtnText}>Send Offer</Text>
+                <Text style={styles.submitBtnText}>Submit Offer</Text>
               </Pressable>
             </KeyboardAvoidingView>
           </TouchableWithoutFeedback>
@@ -180,7 +203,25 @@ const styles = StyleSheet.create({
   listedPrice: {
     fontSize: 14,
     color: '#6B7280',
-    marginBottom: 24,
+    marginBottom: 12,
+  },
+  rangeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    gap: 8,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  rangeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#3730A3',
+    flex: 1,
   },
   form: {
     gap: 20,
@@ -203,9 +244,17 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     backgroundColor: '#F9FAFB',
   },
+  inputError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  inputSuccess: {
+    borderColor: '#10B981',
+    backgroundColor: '#ECFDF5',
+  },
   hintText: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
     marginTop: 2,
   },
   quantityControl: {

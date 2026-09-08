@@ -91,10 +91,12 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
             <Text style={styles.infoValue}>GHS {order.serviceFee.toFixed(2)}</Text>
           </View>
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Delivery Fee</Text>
-            <Text style={styles.infoValue}>GHS {order.deliveryFee.toFixed(2)}</Text>
-          </View>
+          {order.deliveryFee > 0 && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Delivery Fee</Text>
+              <Text style={styles.infoValue}>GHS {order.deliveryFee.toFixed(2)}</Text>
+            </View>
+          )}
 
           <View style={[styles.divider, { backgroundColor: '#4F46E5' }]} />
 

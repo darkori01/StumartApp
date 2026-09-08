@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 const colors = {
   bg: '#FEFEFE',
   surface: '#FFFFFF',
@@ -22,7 +24,11 @@ const colors = {
 const spacing = { xs: 6, sm: 10, md: 16, lg: 24 };
 
 const typography = {
-  fontFamily: undefined,
+  fontFamily: Platform.select({
+    ios: 'System',
+    android: 'sans-serif',
+    web: 'system-ui',
+  }),
   h1: 32,
   h2: 24,
   h3: 18,

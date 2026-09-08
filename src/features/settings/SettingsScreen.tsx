@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
   Text,
   Image,
   StyleSheet,
   Pressable,
-  SafeAreaView,
   ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { ScreenHeader } from '../../components/ScreenHeader';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { NotificationPreferencesModal } from './NotificationPreferencesModal';
 import { AnnouncementsModal } from './AnnouncementsModal';
@@ -53,15 +54,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header Bar */}
-      <View style={styles.topHeaderBar}>
-        <Pressable style={styles.backBtn} onPress={onBack}>
-          <Ionicons name="arrow-back" size={20} color="#4F46E5" />
-          <Text style={styles.backBtnText}>Home</Text>
-        </Pressable>
-        <Text style={styles.screenTitle}>Settings</Text>
-        <View style={{ width: 60 }} />
-      </View>
+      <ScreenHeader title="Settings" backLabel="Home" onBack={onBack} />
 
       <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* User Cover Banner & Avatar */}

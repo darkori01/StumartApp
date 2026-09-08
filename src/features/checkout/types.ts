@@ -1,6 +1,6 @@
 import { Offer } from '../offers/types';
 
-export type PaymentType = 'card' | 'mobile_money' | 'wallet';
+export type PaymentType = 'card' | 'mobile_money' | 'paystack' | 'wallet';
 
 export interface OrderItem {
   productId: string;
@@ -37,6 +37,7 @@ export interface Order {
 export interface CheckoutTarget {
   listing: {
     id: string;
+    vendorId?: string;
     title: string;
     vendor: string;
     price: string;

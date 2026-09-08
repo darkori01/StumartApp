@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Modal, SafeAreaView, ScrollView, Switch, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, Pressable, Modal, ScrollView, Switch, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ScreenHeader } from '../../components/ScreenHeader';
 
 interface NotificationPreferencesModalProps {
   visible: boolean;
@@ -25,13 +27,7 @@ export const NotificationPreferencesModal: React.FC<NotificationPreferencesModal
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={onClose}>
-            <Ionicons name="arrow-back" size={20} color="#4F46E5" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Notifications</Text>
-          <View style={{ width: 24 }} />
-        </View>
+        <ScreenHeader title="Notifications" backLabel="Settings" onBack={onClose} />
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.subtitle}>
@@ -82,8 +78,8 @@ export const NotificationPreferencesModal: React.FC<NotificationPreferencesModal
               <View style={styles.rowLeft}>
                 <Ionicons name="heart-outline" size={20} color="#4F46E5" />
                 <View style={styles.textWrap}>
-                  <Text style={styles.rowTitle}>Social & Reels</Text>
-                  <Text style={styles.rowDesc}>Likes on your reels, new vendor subscribers, and comments.</Text>
+                  <Text style={styles.rowTitle}>Social & Updates</Text>
+                  <Text style={styles.rowDesc}>New vendor posts, comments, and campus announcements.</Text>
                 </View>
               </View>
               <Switch

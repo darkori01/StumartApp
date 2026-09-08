@@ -1,6 +1,8 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet, Pressable, Modal, SafeAreaView, ScrollView, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, Image, StyleSheet, Pressable, Modal, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ScreenHeader } from '../../components/ScreenHeader';
 
 interface AboutModalProps {
   visible: boolean;
@@ -34,13 +36,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ visible, onClose }) => {
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={onClose}>
-            <Ionicons name="arrow-back" size={20} color="#4F46E5" />
-          </Pressable>
-          <Text style={styles.headerTitle}>About StuMart</Text>
-          <View style={{ width: 24 }} />
-        </View>
+        <ScreenHeader title="About StuMart" backLabel="Settings" onBack={onClose} />
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Logo & Version */}

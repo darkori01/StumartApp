@@ -14,8 +14,10 @@ export const OfferButton: React.FC<OfferButtonProps> = ({ onPress, disabled }) =
       onPress={onPress}
       disabled={disabled}
     >
-      <Ionicons name="pricetag" size={15} color={disabled ? '#9CA3AF' : '#F59E0B'} />
-      <Text style={[styles.text, disabled && styles.textDisabled]}>Make Offer</Text>
+      <Ionicons name={disabled ? 'lock-closed' : 'pricetag'} size={15} color={disabled ? '#9CA3AF' : '#F59E0B'} />
+      <Text style={[styles.text, disabled && styles.textDisabled]}>
+        {disabled ? 'Offer Locked' : 'Make Offer'}
+      </Text>
     </Pressable>
   );
 };

@@ -1,12 +1,21 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, Modal, SafeAreaView, ScrollView } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Announcement } from './types';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, Pressable, Modal, ScrollView } from 'react-native';
+import { ScreenHeader } from '../../components/ScreenHeader';
 
 interface AnnouncementsModalProps {
   visible: boolean;
   onClose: () => void;
 }
+
+export type Announcement = {
+  id: string;
+  title: string;
+  date: string;
+  body: string;
+  isRead: boolean;
+  category: string;
+};
 
 const mockAnnouncements: Announcement[] = [
   {
@@ -56,15 +65,16 @@ export const AnnouncementsModal: React.FC<AnnouncementsModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <Pressable style={styles.backBtn} onPress={onClose}>
-            <Ionicons name="arrow-back" size={20} color="#4F46E5" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Announcements</Text>
-          <Pressable onPress={markAllRead}>
-            <Text style={styles.markReadText}>Mark read</Text>
-          </Pressable>
-        </View>
+        <ScreenHeader
+          title="Announcements"
+          backLabel="Settings"
+          onBack={onClose}
+          rightAction={
+            <Pressable onPress={markAllRead}>
+              <Text style={styles.markReadText}>Mark read</Text>
+            </Pressable>
+          }
+        />
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {announcements.map((item) => (

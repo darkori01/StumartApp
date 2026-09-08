@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { Modal, SafeAreaView, StyleSheet, View } from 'react-native';
+import { Modal, Platform, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { CheckoutTarget, PaymentType, Order } from './types';
 import { OrderSummarySheet } from './OrderSummarySheet';
 import { PaymentMethodSelector } from './PaymentMethodSelector';
-import { PaymentVerificationModal } from './PaymentVerificationModal';
 import { OrderConfirmationModal } from './OrderConfirmationModal';
+import PaystackCheckout from './PaystackCheckout';
+
+const DEFAULT_API_HOST =
+  Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || DEFAULT_API_HOST;
 
 interface CheckoutFlowModalProps {
   visible: boolean;
@@ -30,24 +35,77 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
   const [paymentMasked, setPaymentMasked] = useState<string>('MTN MoMo ••1234');
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
 
+  // Paystack flow state
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [paystackReference, setPaystackReference] = useState<string | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
   // Static fees for mock demonstration
   const serviceFee = 2.0;
-  const deliveryFee = 5.0;
+  const deliveryFee = 0.0;
 
   if (!checkoutTarget) return null;
 
   const maxStock = checkoutTarget.listing.stock || 10;
   const subtotal = checkoutTarget.unitPriceNum * quantity;
-  const grandTotal = subtotal + serviceFee + deliveryFee;
+  const grandTotal = subtotal + serviceFee;
 
   const handleConfirmSummary = () => {
     setStep('payment_method');
   };
 
-  const handleSelectPaymentMethod = (method: PaymentType, maskedDetails: string) => {
+  const handleSelectPaymentMethod = async (method: PaymentType, maskedDetails: string) => {
     setSelectedPaymentMethod(method);
     setPaymentMasked(maskedDetails);
-    setStep('verification');
+    setPaymentError(null);
+
+    try {
+      const res = await fetch(`${API_BASE}/paystack/initialize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: grandTotal,
+          email: 'buyer@st.knust.edu.gh',
+          orderId: checkoutTarget.listing.id,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.authorization_url) {
+        setPaymentError(data.error || 'Could not start payment');
+        return;
+      }
+
+      setCheckoutUrl(data.authorization_url);
+      setPaystackReference(data.reference);
+      setStep('verification');
+    } catch (err) {
+      console.error('Paystack initialize error:', err);
+      setPaymentError('Could not reach payment server');
+    }
+  };
+
+  const handlePaystackComplete = async () => {
+    if (!paystackReference) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/paystack/verify/${paystackReference}`);
+      const data = await res.json();
+
+      setCheckoutUrl(null);
+
+      if (data.status === 'success') {
+        handlePaymentSuccess();
+      } else {
+        setPaymentError('Payment was not successful. Please try again.');
+        setStep('payment_method');
+      }
+    } catch (err) {
+      console.error('Paystack verify error:', err);
+      setCheckoutUrl(null);
+      setPaymentError('Could not verify payment');
+      setStep('payment_method');
+    }
   };
 
   const handlePaymentSuccess = () => {
@@ -102,6 +160,9 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
     setStep('summary');
     setQuantity(1);
     setCompletedOrder(null);
+    setCheckoutUrl(null);
+    setPaystackReference(null);
+    setPaymentError(null);
     onClose();
   };
 
@@ -129,14 +190,10 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
           />
         )}
 
-        {step === 'verification' && (
-          <PaymentVerificationModal
-            totalAmount={grandTotal}
-            paymentMethod={selectedPaymentMethod}
-            paymentDetailsMasked={paymentMasked}
-            onSuccess={handlePaymentSuccess}
-            onFailedRetry={() => setStep('verification')}
-            onChangePaymentMethod={() => setStep('payment_method')}
+        {step === 'verification' && checkoutUrl && (
+          <PaystackCheckout
+            authorizationUrl={checkoutUrl}
+            onComplete={handlePaystackComplete}
           />
         )}
 

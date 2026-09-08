@@ -12,3 +12,20 @@ export interface Offer {
   status: OfferStatus;
   expiresAt: number; // timestamp
 }
+
+export interface BargainOffer {
+  id: string;
+  listingId: string;
+  listingTitle: string;
+  listingImage: string;
+  buyerId: string;
+  buyerName: string;
+  sellerId: string;
+  sellerName: string;
+  quantity: number;
+  offerAmount: number;
+  status: 'pending' | 'approved' | 'denied';
+  createdAt: string;
+  respondedAt?: string;
+}
+

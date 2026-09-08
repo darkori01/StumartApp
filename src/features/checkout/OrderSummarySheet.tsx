@@ -29,7 +29,7 @@ export const OrderSummarySheet: React.FC<OrderSummarySheetProps> = ({
   const isNegotiated = !!offer || !!(originalPriceNum && originalPriceNum > unitPriceNum);
 
   const subtotal = unitPriceNum * quantity;
-  const grandTotal = subtotal + serviceFee + deliveryFee;
+  const grandTotal = subtotal + serviceFee + (deliveryFee || 0);
 
   const isStockExceeded = quantity > maxStock;
 
@@ -103,13 +103,15 @@ export const OrderSummarySheet: React.FC<OrderSummarySheetProps> = ({
             <Text style={styles.breakdownValue}>GHS {serviceFee.toFixed(2)}</Text>
           </View>
 
-          <View style={styles.breakdownRow}>
-            <View style={styles.feeLabelWithInfo}>
-              <Text style={styles.breakdownLabel}>Hostel Delivery Fee</Text>
-              <Text style={styles.mockTag}>Fixed</Text>
+          {deliveryFee > 0 && (
+            <View style={styles.breakdownRow}>
+              <View style={styles.feeLabelWithInfo}>
+                <Text style={styles.breakdownLabel}>Hostel Delivery Fee</Text>
+                <Text style={styles.mockTag}>Fixed</Text>
+              </View>
+              <Text style={styles.breakdownValue}>GHS {deliveryFee.toFixed(2)}</Text>
             </View>
-            <Text style={styles.breakdownValue}>GHS {deliveryFee.toFixed(2)}</Text>
-          </View>
+          )}
 
           <View style={styles.divider} />
 
