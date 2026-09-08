@@ -7,14 +7,21 @@ interface OrderConfirmationModalProps {
   order: Order;
   onViewOrder: () => void;
   onContinueShopping: () => void;
+  /** 'confirmation' (default): the just-paid success screen. 'receipt': reviewing a past
+   * transaction from the Transactions list — single Close action, no "just placed" framing. */
+  mode?: 'confirmation' | 'receipt';
+  onClose?: () => void;
 }
 
 export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
   order,
   onViewOrder,
   onContinueShopping,
+  mode = 'confirmation',
+  onClose,
 }) => {
   const item = order.items[0];
+  const isReceipt = mode === 'receipt';
 
   return (
     <View style={styles.container}>
@@ -24,7 +31,7 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
           <View style={styles.checkCircle}>
             <Ionicons name="checkmark" size={32} color="#FFFFFF" />
           </View>
-          <Text style={styles.orderSuccessTitle}>Order Placed Successfully!</Text>
+          <Text style={styles.orderSuccessTitle}>{isReceipt ? 'Payment Receipt' : 'Order Placed Successfully!'}</Text>
           <Text style={styles.orderNumberText}>Order ID: {order.id}</Text>
           <View style={styles.verifiedBadge}>
             <Ionicons name="shield-checkmark" size={14} color="#10B981" />
@@ -107,24 +114,34 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
         </View>
 
         {/* Sync Notice */}
-        <View style={styles.syncNotice}>
-          <Ionicons name="notifications-outline" size={18} color="#4F46E5" />
-          <Text style={styles.syncNoticeText}>
-            Order sent to seller's dashboard queue ({order.sellerName}). Live tracking is now active.
-          </Text>
-        </View>
+        {!isReceipt && (
+          <View style={styles.syncNotice}>
+            <Ionicons name="notifications-outline" size={18} color="#4F46E5" />
+            <Text style={styles.syncNoticeText}>
+              Order sent to seller's dashboard queue ({order.sellerName}). Live tracking is now active.
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* Action Footer */}
       <View style={styles.footer}>
-        <Pressable style={styles.viewOrderBtn} onPress={onViewOrder}>
-          <Ionicons name="receipt-outline" size={18} color="#FFFFFF" />
-          <Text style={styles.viewOrderText}>View My Orders</Text>
-        </Pressable>
+        {isReceipt ? (
+          <Pressable style={styles.viewOrderBtn} onPress={onClose}>
+            <Text style={styles.viewOrderText}>Close</Text>
+          </Pressable>
+        ) : (
+          <>
+            <Pressable style={styles.viewOrderBtn} onPress={onViewOrder}>
+              <Ionicons name="receipt-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.viewOrderText}>View My Transactions</Text>
+            </Pressable>
 
-        <Pressable style={styles.continueShoppingBtn} onPress={onContinueShopping}>
-          <Text style={styles.continueShoppingText}>Back to Marketplace</Text>
-        </Pressable>
+            <Pressable style={styles.continueShoppingBtn} onPress={onContinueShopping}>
+              <Text style={styles.continueShoppingText}>Back to Marketplace</Text>
+            </Pressable>
+          </>
+        )}
       </View>
     </View>
   );

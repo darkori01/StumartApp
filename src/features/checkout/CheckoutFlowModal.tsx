@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Modal, Platform, StyleSheet, View } from 'react-native';
+import { Alert, Modal, Platform, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CheckoutTarget, PaymentType, Order } from './types';
+import { CheckoutTarget, Order } from './types';
 import { OrderSummarySheet } from './OrderSummarySheet';
-import { PaymentMethodSelector } from './PaymentMethodSelector';
 import { OrderConfirmationModal } from './OrderConfirmationModal';
 import PaystackCheckout from './PaystackCheckout';
+import { auth, db } from '../../services/firebaseConfig';
+import { doc, setDoc } from 'firebase/firestore';
 
 const DEFAULT_API_HOST =
   Platform.OS === 'android' ? 'http://10.0.2.2:4000' : 'http://localhost:4000';
@@ -26,19 +27,17 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
   onOrderCompleted,
   onViewOrdersRequested,
 }) => {
-  // Step in flow: 1: 'summary', 2: 'payment_method', 3: 'verification', 4: 'confirmation'
-  const [step, setStep] = useState<'summary' | 'payment_method' | 'verification' | 'confirmation'>('summary');
+  // Step in flow: 1: 'summary', 2: 'verification' (Paystack's hosted checkout), 3: 'confirmation'.
+  // Paystack is the only payment path, so there's no separate method-selection step.
+  const [step, setStep] = useState<'summary' | 'verification' | 'confirmation'>('summary');
 
   // Flow State
   const [quantity, setQuantity] = useState<number>(checkoutTarget?.initialQuantity || 1);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentType>('mobile_money');
-  const [paymentMasked, setPaymentMasked] = useState<string>('MTN MoMo ••1234');
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
 
   // Paystack flow state
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [paystackReference, setPaystackReference] = useState<string | null>(null);
-  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   // Static fees for mock demonstration
   const serviceFee = 2.0;
@@ -50,15 +49,7 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
   const subtotal = checkoutTarget.unitPriceNum * quantity;
   const grandTotal = subtotal + serviceFee;
 
-  const handleConfirmSummary = () => {
-    setStep('payment_method');
-  };
-
-  const handleSelectPaymentMethod = async (method: PaymentType, maskedDetails: string) => {
-    setSelectedPaymentMethod(method);
-    setPaymentMasked(maskedDetails);
-    setPaymentError(null);
-
+  const handleConfirmSummary = async () => {
     try {
       const res = await fetch(`${API_BASE}/paystack/initialize`, {
         method: 'POST',
@@ -72,7 +63,7 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
       const data = await res.json();
 
       if (!res.ok || !data.authorization_url) {
-        setPaymentError(data.error || 'Could not start payment');
+        Alert.alert('Could not start payment', data.error || 'Please try again.');
         return;
       }
 
@@ -81,7 +72,7 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
       setStep('verification');
     } catch (err) {
       console.error('Paystack initialize error:', err);
-      setPaymentError('Could not reach payment server');
+      Alert.alert('Could not start payment', 'Could not reach the payment server. Check your connection and try again.');
     }
   };
 
@@ -97,18 +88,18 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
       if (data.status === 'success') {
         handlePaymentSuccess();
       } else {
-        setPaymentError('Payment was not successful. Please try again.');
-        setStep('payment_method');
+        Alert.alert('Payment not completed', 'Your Paystack payment was not successful. Please try again.');
+        setStep('summary');
       }
     } catch (err) {
       console.error('Paystack verify error:', err);
       setCheckoutUrl(null);
-      setPaymentError('Could not verify payment');
-      setStep('payment_method');
+      Alert.alert('Could not verify payment', 'Please try again.');
+      setStep('summary');
     }
   };
 
-  const handlePaymentSuccess = () => {
+  const handlePaymentSuccess = async () => {
     // Generate Order Object matching mock Order shape
     const orderId = `STM-${Math.floor(10000 + Math.random() * 90000)}`;
     const nowIso = new Date().toLocaleDateString('en-GB', {
@@ -121,9 +112,9 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
 
     const newOrder: Order = {
       id: orderId,
-      buyerId: 'customer:toni',
+      buyerId: auth.currentUser?.uid || '',
       buyerName: 'Toni Customer',
-      sellerId: checkoutTarget.listing.vendor,
+      sellerId: checkoutTarget.listing.vendorId || checkoutTarget.listing.vendor,
       sellerName: checkoutTarget.listing.vendor,
       items: [
         {
@@ -142,8 +133,8 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
       serviceFee,
       deliveryFee,
       total: grandTotal,
-      paymentMethod: selectedPaymentMethod,
-      paymentDetailsMasked: paymentMasked,
+      paymentMethod: 'paystack',
+      paymentDetailsMasked: 'Paystack Checkout',
       paymentStatus: 'verified',
       offerId: checkoutTarget.offer?.id || undefined,
       orderStatus: 'Confirmed',
@@ -154,6 +145,14 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
     setCompletedOrder(newOrder);
     onOrderCompleted(newOrder);
     setStep('confirmation');
+
+    // Sync to Firestore so the vendor's dashboard (a separate login/device) sees this
+    // Paystack payment live via its `orders` onSnapshot subscription, not just this device.
+    try {
+      await setDoc(doc(db, 'orders', newOrder.id), newOrder);
+    } catch (err) {
+      console.error('Order sync error:', (err as any)?.code, (err as any)?.message);
+    }
   };
 
   const handleClose = () => {
@@ -162,7 +161,6 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
     setCompletedOrder(null);
     setCheckoutUrl(null);
     setPaystackReference(null);
-    setPaymentError(null);
     onClose();
   };
 
@@ -179,14 +177,6 @@ export const CheckoutFlowModal: React.FC<CheckoutFlowModalProps> = ({
             onQuantityChange={(q) => setQuantity(q)}
             onConfirm={handleConfirmSummary}
             onBack={handleClose}
-          />
-        )}
-
-        {step === 'payment_method' && (
-          <PaymentMethodSelector
-            totalAmount={grandTotal}
-            onSelectPayment={handleSelectPaymentMethod}
-            onBack={() => setStep('summary')}
           />
         )}
 

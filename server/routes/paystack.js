@@ -3,6 +3,13 @@ const router = express.Router();
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
+// Paystack TEST MODE — PAYSTACK_SECRET_KEY in .env must be sk_test_..., never sk_live_.
+// Test mode still runs Paystack's real hosted checkout, including its own OTP step.
+// Standard published test card for a full successful run:
+//   Card: 4084 0840 8408 4081   Expiry: any future date   CVV: 408
+//   PIN (if prompted): 0000     OTP (if prompted): 123456
+// Paystack also publishes cards that simulate a decline, for demoing the failure path.
+
 // Start a payment — called by the app before opening the WebView
 router.post('/initialize', async (req, res) => {
   try {
@@ -49,8 +56,7 @@ router.get('/verify/:reference', async (req, res) => {
     const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
       headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` },
     });
-       
-    const fetch = require('node-fetch');
+
     const data = await response.json();
     if (!data.status) {
       return res.status(400).json({ error: data.message || 'Verification failed' });

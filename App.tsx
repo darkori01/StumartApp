@@ -7,6 +7,7 @@ import {
   Alert,
   Image,
   ImageBackground,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -27,13 +28,65 @@ import { ListingOfferToggle } from './src/features/offers/ListingOfferToggle';
 import { useOffers, useOfferActions } from './src/features/offers/hooks';
 import { Offer, BargainOffer } from './src/features/offers/types';
 import { CheckoutFlowModal } from './src/features/checkout/CheckoutFlowModal';
+import { OrderConfirmationModal } from './src/features/checkout/OrderConfirmationModal';
 import { CheckoutTarget, Order } from './src/features/checkout/types';
 import { SettingsScreen } from './src/features/settings/SettingsScreen';
 import { auth, db } from './src/services/firebaseConfig';
 import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 
 const showNotification = (title: string, message: string) => {
   Alert.alert(title, message);
+};
+
+// The app's own email/password/role check (against local `accounts` state) is what actually
+// gates login — this just gives that logged-in identity a stable Firestore/Firebase-Auth uid,
+// since security rules and buyerId/sellerId matching require a real request.auth.uid. The shadow
+// password is deterministic and never shown to the user, so the app's own forgot-password flow
+// (which only ever changes the local `accounts` record) can't get out of sync with it.
+const shadowCredentialsFor = (email: string, role: 'vendor' | 'customer') => {
+  const normalizedEmail = email.trim().toLowerCase();
+  return {
+    shadowEmail: normalizedEmail.replace('@', `+${role}@`),
+    shadowPassword: `Stumart-${role}-${normalizedEmail}`,
+  };
+};
+
+const ensureFirebaseIdentity = async (email: string, role: 'vendor' | 'customer', displayName: string) => {
+  const { shadowEmail, shadowPassword } = shadowCredentialsFor(email, role);
+  try {
+    await signInWithEmailAndPassword(auth, shadowEmail, shadowPassword);
+  } catch (signInErr: any) {
+    try {
+      await createUserWithEmailAndPassword(auth, shadowEmail, shadowPassword);
+    } catch (createErr: any) {
+      if (createErr?.code === 'auth/email-already-in-use') {
+        throw signInErr;
+      }
+      throw createErr;
+    }
+  }
+  if (auth.currentUser) {
+    await setDoc(doc(db, 'users', auth.currentUser.uid), {
+      name: displayName,
+      email: email.trim().toLowerCase(),
+      role,
+    }, { merge: true });
+  }
+};
+
+// Static/seeded listings don't carry a real vendorId, so resolve the seller's Firestore uid
+// from the public `users` collection (populated by ensureFirebaseIdentity on vendor login).
+const resolveVendorUid = async (vendorName: string, fallbackVendorId?: string): Promise<string> => {
+  if (fallbackVendorId) return fallbackVendorId;
+  try {
+    const q = query(collection(db, 'users'), where('name', '==', vendorName), where('role', '==', 'vendor'));
+    const snap = await getDocs(q);
+    if (!snap.empty) return snap.docs[0].id;
+  } catch (e) {
+    console.error('Vendor uid lookup error:', (e as any)?.code, (e as any)?.message);
+  }
+  return vendorName;
 };
 
 const parsePriceNumber = (priceStr: string | number): number => {
@@ -41,6 +94,9 @@ const parsePriceNumber = (priceStr: string | number): number => {
   if (!priceStr) return 0;
   return parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0;
 };
+
+const formatWholeCedis = (amount: number): string =>
+  Math.round(amount).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 // Backend base URL. Override with EXPO_PUBLIC_API_URL (e.g. your LAN IP
 // "http://192.168.1.20:4000" for a physical device). Defaults differ by
@@ -538,6 +594,9 @@ export type BuyerOrder = {
   date: string;
   status: OrderStatus;
   timeline: { time: string; text: string }[];
+  /** Present for orders placed through the real Paystack checkout — the itemized
+   * receipt data. Absent for legacy/seeded/debug entries, which have no payment record. */
+  rawOrder?: Order;
 };
 
 const initialBuyerOrders: BuyerOrder[] = [
@@ -748,6 +807,7 @@ export default function App() {
   const [customerOrders, setCustomerOrders] = useState<BuyerOrder[]>(initialBuyerOrders);
   const [orderFilter, setOrderFilter] = useState<'All' | OrderStatus>('All');
   const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<BuyerOrder | null>(null);
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
   const [offerSheetListing, setOfferSheetListing] = useState<Listing | null>(null);
   const [counterOfferSheetData, setCounterOfferSheetData] = useState<{ previousOffer: Offer; listingTitle: string } | null>(null);
   const [activeCheckoutTarget, setActiveCheckoutTarget] = useState<CheckoutTarget | null>(null);
@@ -755,7 +815,7 @@ export default function App() {
 
   const handleOrderCompleted = (createdOrder: Order) => {
     const item = createdOrder.items[0];
-    const buyerOrder: BuyerOrder & { rawOrder?: Order } = {
+    const buyerOrder: BuyerOrder = {
       id: createdOrder.id,
       vendor: createdOrder.sellerName,
       vendorImage: typeof item?.imageUrl === 'string' ? { uri: item.imageUrl } : item?.imageUrl,
@@ -1096,6 +1156,14 @@ export default function App() {
     const timer = setTimeout(() => setIsLoading(false), 1200);
     return () => clearTimeout(timer);
   }, []);
+
+  // Live vendor revenue: a starting demo balance plus every order Firestore has actually
+  // recorded for this vendor (written once a Paystack test payment verifies — see
+  // CheckoutFlowModal's handlePaymentSuccess). Cross-device safe, unlike local component state.
+  const vendorTotalEarnings = useMemo(
+    () => 500 + vendorOrders.reduce((sum, order) => sum + (order.total || 0), 0),
+    [vendorOrders],
+  );
 
   const filteredListings = useMemo(() => {
     return marketListings.filter((listing) => {
@@ -1492,6 +1560,7 @@ export default function App() {
   };
 
   const logout = () => {
+    signOut(auth).catch((err) => console.error('Sign out error:', (err as any)?.code, (err as any)?.message));
     setIsAuthenticated(false);
     setActiveTab('Home');
   };
@@ -1601,7 +1670,7 @@ export default function App() {
   };
 
 
-  const handleSignin = () => {
+  const handleSignin = async () => {
     const normalizedEmail = authEmail.trim().toLowerCase();
     const account = accounts.find(
       (item) => item.email.toLowerCase() === normalizedEmail && item.password === authPassword && item.role === role,
@@ -1617,6 +1686,14 @@ export default function App() {
       return;
     }
 
+    try {
+      await ensureFirebaseIdentity(account.email, account.role, account.name);
+    } catch (err) {
+      console.error('Firebase identity error:', (err as any)?.code, (err as any)?.message);
+      setAuthMessage('Could not connect to the server. Check your connection and try again.');
+      return;
+    }
+
     setAuthMessage('');
     setIsAuthenticated(true);
     setActiveTab(account.role === 'vendor' ? 'Dashboard' : 'Home');
@@ -1624,7 +1701,7 @@ export default function App() {
     setMessageDraft('');
   };
 
-  const handleGoogleContinue = () => {
+  const handleGoogleContinue = async () => {
     const trimmedName = authName.trim() || (role === 'customer' ? 'Google Customer' : 'Google Vendor');
     const normalizedEmail = authEmail.trim().toLowerCase();
 
@@ -1668,6 +1745,14 @@ export default function App() {
       setVendorEvidenceAttached(false);
       setAuthMessage('Google vendor profile submitted. Login opens after school ID verification.');
       Alert.alert('Verification needed', 'Your Google vendor profile is pending school ID review.');
+      return;
+    }
+
+    try {
+      await ensureFirebaseIdentity(normalizedEmail, role, existingAccount?.name || trimmedName);
+    } catch (err) {
+      console.error('Firebase identity error:', (err as any)?.code, (err as any)?.message);
+      setAuthMessage('Could not connect to the server. Check your connection and try again.');
       return;
     }
 
@@ -1743,15 +1828,17 @@ export default function App() {
     setActiveTab('Home');
   };
 
-  const handlePurchase = (listing: Listing) => {
+  const handlePurchase = async (listing: Listing) => {
+    // Buy Now always charges the full listed price — bargaining only happens through
+    // the vendor-approval offer flow (MakeOfferSheet), never automatically here.
     const rawPrice = parsePriceNumber(listing.price);
     const unitPriceNum = Number.isNaN(rawPrice) ? 50 : rawPrice;
-    const isNegotiable = listing.priceType === 'Negotiable';
-    const effectiveUnitPrice = isNegotiable ? Math.round(unitPriceNum * 0.88) : unitPriceNum;
+    const vendorId = await resolveVendorUid(listing.vendor, listing.vendorId);
 
     const target: CheckoutTarget = {
       listing: {
         id: listing.id,
+        vendorId,
         title: listing.title,
         vendor: listing.vendor,
         price: listing.price,
@@ -1761,9 +1848,8 @@ export default function App() {
         category: listing.category,
         stock: 10,
       },
-      price: `GHS ${effectiveUnitPrice.toFixed(2)}`,
-      unitPriceNum: effectiveUnitPrice,
-      originalPriceNum: isNegotiable ? unitPriceNum : undefined,
+      price: `GHS ${unitPriceNum.toFixed(2)}`,
+      unitPriceNum,
       initialQuantity: 1,
     };
     setActiveCheckoutTarget(target);
@@ -2598,38 +2684,34 @@ export default function App() {
             userAvatarUri={customerProfilePhotoUri || undefined}
           />
         </Modal>
-        <LinearGradient
-          colors={[COLORS.brand, COLORS.accent]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.topCard}
-        >
-          <View style={styles.topBar}>
-            <View style={styles.brandRow}>
-              <Image source={logo} style={styles.headerLogo} resizeMode="contain" />
-              <View style={styles.brandTitleWrap}>
-                <Text style={styles.smallLabel}>Welcome back</Text>
-                <Text style={styles.appTitle} numberOfLines={1}>{isAuthenticated ? (accounts.find(a => a.email.toLowerCase() === authEmail.toLowerCase())?.name ?? (role === 'vendor' ? 'Your business' : 'Stumart')) : (role === 'vendor' ? 'Ama Beauty Lab' : 'Stumart')}</Text>
+        {role === 'customer' && activeTab === 'Home' ? (
+          <LinearGradient
+            colors={[COLORS.brand, COLORS.accent]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.topCard}
+          >
+            <View style={styles.topBar}>
+              <View style={styles.brandRow}>
+                <Image source={logo} style={styles.headerLogo} resizeMode="contain" />
+                <View style={styles.brandTitleWrap}>
+                  <Text style={styles.smallLabel}>Welcome back</Text>
+                  <Text style={styles.appTitle} numberOfLines={1}>{isAuthenticated ? (accounts.find(a => a.email.toLowerCase() === authEmail.toLowerCase())?.name ?? 'Stumart') : 'Stumart'}</Text>
+                </View>
               </View>
+              <Pressable style={styles.profilePill} onPress={() => setShowSettingsScreen(true)}>
+                <Ionicons name="settings-sharp" size={22} color="#4F46E5" />
+              </Pressable>
             </View>
-            <Pressable style={styles.profilePill} onPress={() => setShowSettingsScreen(true)}>
-              <Ionicons name="settings-sharp" size={22} color="#4F46E5" />
-            </Pressable>
-          </View>
-          <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={16} color="#FFFFFF" />
-            <Text style={styles.locationText}>KNUST • Oforikrom</Text>
-          </View>
-          <View style={styles.heroBadge}>
-            <Ionicons name="rocket-outline" size={14} color="#FFFFFF" />
-            <Text style={styles.heroBadgeText}>Built for campus hustle</Text>
-          </View>
-          <Text style={styles.heroLine}>
-            {role === 'vendor'
-              ? 'Turn your studio into a campus favorite.'
-              : 'Find the right service before your next class break.'}
-          </Text>
-          {role === 'customer' ? (
+            <View style={styles.locationRow}>
+              <Ionicons name="location-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.locationText}>KNUST • Oforikrom</Text>
+            </View>
+            <View style={styles.heroBadge}>
+              <Ionicons name="rocket-outline" size={14} color="#FFFFFF" />
+              <Text style={styles.heroBadgeText}>Built for campus hustle</Text>
+            </View>
+            <Text style={styles.heroLine}>Find the right service before your next class break.</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.needRow}>
               {quickNeeds.map((need) => (
                 <Pressable
@@ -2641,19 +2723,20 @@ export default function App() {
                 </Pressable>
               ))}
             </ScrollView>
-          ) : (
-            <View style={styles.vendorHeroStats}>
-              <View style={styles.vendorHeroStat}>
-                <Text style={styles.vendorHeroValue}>GHS 1,240</Text>
-                <Text style={styles.vendorHeroLabel}>Cash made</Text>
-              </View>
-              <View style={styles.vendorHeroStat}>
-                <Text style={styles.vendorHeroValue}>{activeOrders.length}</Text>
-                <Text style={styles.vendorHeroLabel}>Active orders</Text>
-              </View>
-            </View>
-          )}
-        </LinearGradient>
+          </LinearGradient>
+        ) : !(activeTab === 'Chats' && selectedChat) ? (
+          <View style={styles.slimHeader}>
+            <Image source={logo} style={styles.slimHeaderLogo} resizeMode="contain" />
+            <Text style={styles.slimHeaderTitle} numberOfLines={1}>
+              {isAuthenticated
+                ? (accounts.find((a) => a.email.toLowerCase() === authEmail.toLowerCase())?.name ?? (role === 'vendor' ? 'Your business' : 'Stumart'))
+                : (role === 'vendor' ? 'Ama Beauty Lab' : 'Stumart')}
+            </Text>
+            <Pressable style={styles.slimHeaderGearBtn} onPress={() => setShowSettingsScreen(true)}>
+              <Ionicons name="settings-sharp" size={20} color={COLORS.brand} />
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Full-screen profile editor */}
         <Modal visible={showProfileEditor} animationType="slide">
@@ -2709,9 +2792,11 @@ export default function App() {
 
             <LinearGradient colors={['#4D2EB7', '#9B68F4']} style={styles.vendorRevenueCard}>
               <View>
-                <Text style={styles.revenueLabel}>Today's cash made</Text>
-                <Text style={styles.revenueValue}>GHS 1,240</Text>
-                <Text style={styles.revenueMeta}>+18% from yesterday</Text>
+                <Text style={styles.revenueLabel}>Total sales</Text>
+                <Text style={styles.revenueValue}>GHS {formatWholeCedis(vendorTotalEarnings)}</Text>
+                <Text style={styles.revenueMeta}>
+                  {vendorOrders.length} Paystack {vendorOrders.length === 1 ? 'order' : 'orders'} received
+                </Text>
               </View>
               <View style={styles.revenueIcon}>
                 <Ionicons name="trending-up" size={28} color="#ffffff" />
@@ -3196,7 +3281,7 @@ export default function App() {
             )}
 
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Vendor Orders</Text>
+              <Text style={styles.sectionTitle}>Transactions</Text>
               <View style={{flexDirection: 'row', alignItems: 'center'}}>
                 <Pressable onPress={simulateIncomingOrder} style={{marginRight: 15, padding: 5, backgroundColor: '#E8E2F7', borderRadius: 8}}>
                   <Text style={{color: '#6E42E1', fontSize: 12, fontWeight: 'bold'}}>+ Debug Order</Text>
@@ -3238,7 +3323,11 @@ export default function App() {
                 const isNegotiated = order.rawOrder?.items[0]?.isNegotiated || order.description.includes('Negotiated');
 
                 return (
-                  <View key={order.id} style={styles.orderCardNew}>
+                  <Pressable
+                    key={order.id}
+                    style={styles.orderCardNew}
+                    onPress={() => (order.rawOrder ? setReceiptOrder(order.rawOrder) : setSelectedOrderForDetail(order))}
+                  >
                     <View style={styles.orderCardHeader}>
                       <Image source={order.vendorImage} style={styles.orderCardAvatar} resizeMode="cover" />
                       <View style={styles.orderCardVendorInfo}>
@@ -3292,7 +3381,7 @@ export default function App() {
                         </Pressable>
                       </View>
                     )}
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>
@@ -3375,7 +3464,7 @@ export default function App() {
         {role === 'customer' && activeTab === 'Orders' && (
           <>
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Orders</Text>
+              <Text style={styles.sectionTitle}>Transactions</Text>
               <Text style={styles.sectionMeta}>{customerOrders.filter(o => o.status !== 'Archived').length} active</Text>
             </View>
 
@@ -3409,7 +3498,11 @@ export default function App() {
                 if (order.status === 'Cancelled') { badgeStyle = styles.badgeRed; textStyle = styles.badgeTextRed; }
 
                 return (
-                  <Pressable key={order.id} style={styles.orderCardNew} onPress={() => setSelectedOrderForDetail(order)}>
+                  <Pressable
+                    key={order.id}
+                    style={styles.orderCardNew}
+                    onPress={() => (order.rawOrder ? setReceiptOrder(order.rawOrder) : setSelectedOrderForDetail(order))}
+                  >
                     <View style={styles.orderCardHeader}>
                       <Image source={order.vendorImage} style={styles.orderCardAvatar} resizeMode="cover" />
                       <View style={styles.orderCardVendorInfo}>
@@ -3434,7 +3527,7 @@ export default function App() {
                 <View style={styles.orderDetailOverlay}>
                   <View style={styles.orderDetailContent}>
                     <View style={styles.orderDetailHeader}>
-                      <Text style={styles.orderDetailTitle}>Order Details</Text>
+                      <Text style={styles.orderDetailTitle}>Transaction Details</Text>
                       <Pressable onPress={() => setSelectedOrderForDetail(null)}>
                         <Ionicons name="close-circle" size={28} color="#9A8CBF" />
                       </Pressable>
@@ -3503,10 +3596,12 @@ export default function App() {
         )}
         {activeTab === 'Chats' && (
           <>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{role === 'vendor' ? 'Client messages' : 'Campus chats'}</Text>
-              <Text style={styles.sectionMeta}>{selectedChat ? 'Private chat' : `${chatThreads.length} contacts`}</Text>
-            </View>
+            {!selectedChat && (
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>{role === 'vendor' ? 'Client messages' : 'Campus chats'}</Text>
+                <Text style={styles.sectionMeta}>{`${chatThreads.length} contacts`}</Text>
+              </View>
+            )}
 
             {!selectedChat ? (
               <>
@@ -3536,113 +3631,7 @@ export default function App() {
                   );
                 })}
               </>
-            ) : (
-              <View style={styles.chatPanel}>
-                <View style={styles.chatPanelHeader}>
-                  <Pressable style={styles.chatHeaderIcon} onPress={closeChatThread}>
-                    <Ionicons name="chevron-back" size={20} color="#6E42E1" />
-                  </Pressable>
-                  <LinearGradient colors={['#6E42E1', '#9B68F4']} style={styles.chatPanelAvatar}>
-                    <Text style={styles.chatAvatarText}>{selectedChat.avatar}</Text>
-                  </LinearGradient>
-                  <View style={styles.chatPanelTitleWrap}>
-                    <Text style={styles.chatPanelName}>{selectedChat.name}</Text>
-                    <Text style={styles.chatPanelSubtitle}>{selectedChat.subtitle}</Text>
-                  </View>
-                  <Pressable style={styles.chatHeaderIcon}>
-                    <Ionicons name="call-outline" size={20} color="#6E42E1" />
-                  </Pressable>
-                </View>
-
-                <View style={styles.messageList}>
-                  <Text style={styles.dayPill}>Today</Text>
-                  {selectedMessages.map((message) => {
-                    if (!message || typeof message !== 'object') return null;
-
-                    const mine = message.from === 'me';
-                    return (
-                      <View key={message.id ?? `${selectedChat?.id ?? 'chat'}-${Math.random()}`} style={[styles.messageRow, mine && styles.messageRowMine]}>
-                        {message.offer ? (
-                          <OfferMessageCard
-                            offer={message.offer}
-                            isCurrentUserRecipient={!mine}
-                            onAccept={() => {
-                              // mocked accept
-                              if (message.offer) {
-                                message.offer.status = 'ACCEPTED';
-                              }
-                            }}
-                            onCounter={() => setCounterOfferSheetData({ previousOffer: message.offer!, listingTitle: 'Listing Offer' })}
-                            onDecline={() => {
-                              // mocked decline
-                              if (message.offer) {
-                                message.offer.status = 'DECLINED';
-                              }
-                            }}
-                            onCheckout={() => {
-                              if (selectedChatListing && message.offer) {
-                                const listPriceNum = parsePriceNumber(selectedChatListing.price) || message.offer.offerAmount;
-                                const target: CheckoutTarget = {
-                                  listing: {
-                                    id: selectedChatListing.id,
-                                    title: selectedChatListing.title,
-                                    vendor: selectedChatListing.vendor,
-                                    price: selectedChatListing.price,
-                                    priceType: selectedChatListing.priceType,
-                                    image: selectedChatListing.image,
-                                    description: selectedChatListing.description,
-                                    category: selectedChatListing.category,
-                                    stock: 10,
-                                  },
-                                  price: `GHS ${message.offer.offerAmount}`,
-                                  unitPriceNum: message.offer.offerAmount,
-                                  originalPriceNum: listPriceNum,
-                                  offer: message.offer,
-                                  initialQuantity: message.offer.quantity || 1,
-                                };
-                                setActiveCheckoutTarget(target);
-                              }
-                            }}
-                          />
-                        ) : (
-                          <View style={[styles.messageBubble, mine ? styles.messageBubbleMine : styles.messageBubbleTheirs]}>
-                            <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.text ?? ''}</Text>
-                            <Text style={[styles.messageTime, mine && styles.messageTimeMine]}>{message.time ?? ''}</Text>
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
-                  {selectedMessages.length === 0 && (
-                    <View style={styles.emptyChatState}>
-                      <Ionicons name="chatbubble-ellipses-outline" size={28} color="#5B38C9" />
-                      <Text style={styles.emptyTitle}>No messages yet</Text>
-                      <Text style={styles.emptyCopy}>Start the conversation when you are ready.</Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.composerRow}>
-                  <Pressable style={styles.composerIcon}>
-                    <Ionicons name="add" size={21} color="#6E42E1" />
-                  </Pressable>
-                  <TextInput
-                    value={messageDraft}
-                    onChangeText={setMessageDraft}
-                    placeholder={role === 'vendor' ? 'Reply to customer' : 'Message vendor'}
-                    placeholderTextColor="#9A8CBF"
-                    multiline
-                    style={styles.composerInput}
-                  />
-                  <Pressable
-                    style={[styles.sendButton, !messageDraft.trim() && styles.sendButtonMuted]}
-                    onPress={sendMessage}
-                  >
-                    <Ionicons name="send" size={18} color="#ffffff" />
-                  </Pressable>
-                </View>
-              </View>
-            )}
+            ) : null}
           </>
         )}
 
@@ -4018,12 +4007,126 @@ export default function App() {
                 color={isActive ? '#6E42E1' : '#655A88'}
               />
               <Text style={[styles.tabText, isActive && styles.tabTextActive]} numberOfLines={1}>
-                {tab}
+                {tab === 'Orders' ? 'Transactions' : tab}
               </Text>
             </Pressable>
           );
         })}
       </View>
+
+      {activeTab === 'Chats' && selectedChat && (
+        <SafeAreaView style={styles.chatFullScreen}>
+        <KeyboardAvoidingView
+          style={styles.chatFullScreenInner}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.chatPanelHeader}>
+            <Pressable style={styles.chatHeaderIcon} onPress={closeChatThread}>
+              <Ionicons name="chevron-back" size={20} color="#6E42E1" />
+            </Pressable>
+            <LinearGradient colors={['#6E42E1', '#9B68F4']} style={styles.chatPanelAvatar}>
+              <Text style={styles.chatAvatarText}>{selectedChat.avatar}</Text>
+            </LinearGradient>
+            <View style={styles.chatPanelTitleWrap}>
+              <Text style={styles.chatPanelName}>{selectedChat.name}</Text>
+              <Text style={styles.chatPanelSubtitle}>{selectedChat.subtitle}</Text>
+            </View>
+            <Pressable style={styles.chatHeaderIcon}>
+              <Ionicons name="call-outline" size={20} color="#6E42E1" />
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.messageListScroll} contentContainerStyle={styles.messageList}>
+            <Text style={styles.dayPill}>Today</Text>
+            {selectedMessages.map((message) => {
+              if (!message || typeof message !== 'object') return null;
+
+              const mine = message.from === 'me';
+              return (
+                <View key={message.id ?? `${selectedChat?.id ?? 'chat'}-${Math.random()}`} style={[styles.messageRow, mine && styles.messageRowMine]}>
+                  {message.offer ? (
+                    <OfferMessageCard
+                      offer={message.offer}
+                      isCurrentUserRecipient={!mine}
+                      onAccept={() => {
+                        // mocked accept
+                        if (message.offer) {
+                          message.offer.status = 'ACCEPTED';
+                        }
+                      }}
+                      onCounter={() => setCounterOfferSheetData({ previousOffer: message.offer!, listingTitle: 'Listing Offer' })}
+                      onDecline={() => {
+                        // mocked decline
+                        if (message.offer) {
+                          message.offer.status = 'DECLINED';
+                        }
+                      }}
+                      onCheckout={() => {
+                        if (selectedChatListing && message.offer) {
+                          const listPriceNum = parsePriceNumber(selectedChatListing.price) || message.offer.offerAmount;
+                          const target: CheckoutTarget = {
+                            listing: {
+                              id: selectedChatListing.id,
+                              title: selectedChatListing.title,
+                              vendor: selectedChatListing.vendor,
+                              price: selectedChatListing.price,
+                              priceType: selectedChatListing.priceType,
+                              image: selectedChatListing.image,
+                              description: selectedChatListing.description,
+                              category: selectedChatListing.category,
+                              stock: 10,
+                            },
+                            price: `GHS ${message.offer.offerAmount}`,
+                            unitPriceNum: message.offer.offerAmount,
+                            originalPriceNum: listPriceNum,
+                            offer: message.offer,
+                            initialQuantity: message.offer.quantity || 1,
+                          };
+                          setActiveCheckoutTarget(target);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <View style={[styles.messageBubble, mine ? styles.messageBubbleMine : styles.messageBubbleTheirs]}>
+                      <Text style={[styles.messageText, mine && styles.messageTextMine]}>{message.text ?? ''}</Text>
+                      <Text style={[styles.messageTime, mine && styles.messageTimeMine]}>{message.time ?? ''}</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+            {selectedMessages.length === 0 && (
+              <View style={styles.emptyChatState}>
+                <Ionicons name="chatbubble-ellipses-outline" size={28} color="#5B38C9" />
+                <Text style={styles.emptyTitle}>No messages yet</Text>
+                <Text style={styles.emptyCopy}>Start the conversation when you are ready.</Text>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={styles.composerRow}>
+            <Pressable style={styles.composerIcon}>
+              <Ionicons name="add" size={21} color="#6E42E1" />
+            </Pressable>
+            <TextInput
+              value={messageDraft}
+              onChangeText={setMessageDraft}
+              placeholder={role === 'vendor' ? 'Reply to customer' : 'Message vendor'}
+              placeholderTextColor="#9A8CBF"
+              multiline
+              style={styles.composerInput}
+            />
+            <Pressable
+              style={[styles.sendButton, !messageDraft.trim() && styles.sendButtonMuted]}
+              onPress={sendMessage}
+            >
+              <Ionicons name="send" size={18} color="#ffffff" />
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+        </SafeAreaView>
+      )}
+
       {offerSheetListing && (
         <MakeOfferSheet
           visible={!!offerSheetListing}
@@ -4052,7 +4155,8 @@ export default function App() {
             setOfferAttemptsRemaining(newAttemptsLeft);
 
             const offerRef = doc(collection(db, 'offers'));
-            const buyerDisplayName = auth.currentUser?.displayName || (role === 'customer' ? 'Demo Customer' : 'Customer');
+            const buyerDisplayName = currentAccount?.name || (role === 'customer' ? 'Demo Customer' : 'Customer');
+            const sellerId = await resolveVendorUid(offerSheetListing.vendor, offerSheetListing.vendorId);
             const newOffer: BargainOffer = {
               id: offerRef.id,
               listingId: offerSheetListing.id,
@@ -4060,7 +4164,7 @@ export default function App() {
               listingImage: typeof offerSheetListing.image === 'string' ? offerSheetListing.image : (offerSheetListing.image as any)?.uri || '',
               buyerId: auth.currentUser?.uid || '',
               buyerName: buyerDisplayName,
-              sellerId: offerSheetListing.vendorId || offerSheetListing.vendor,
+              sellerId,
               sellerName: offerSheetListing.vendor,
               quantity,
               offerAmount,
@@ -4093,6 +4197,17 @@ export default function App() {
         }}
       />
       {checkoutModal}
+      <Modal visible={!!receiptOrder} animationType="slide" onRequestClose={() => setReceiptOrder(null)}>
+        {receiptOrder && (
+          <OrderConfirmationModal
+            order={receiptOrder}
+            mode="receipt"
+            onClose={() => setReceiptOrder(null)}
+            onViewOrder={() => setReceiptOrder(null)}
+            onContinueShopping={() => setReceiptOrder(null)}
+          />
+        )}
+      </Modal>
     </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -4636,6 +4751,32 @@ const styles = StyleSheet.create({
   profileInitial: {
     color: '#5B38C9',
     fontWeight: '900',
+  },
+  slimHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 10,
+    marginTop: 8,
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEF2FF',
+  },
+  slimHeaderLogo: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+  },
+  slimHeaderTitle: {
+    flex: 1,
+    minWidth: 0,
+    color: '#1F2937',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  slimHeaderGearBtn: {
+    padding: 6,
   },
   heroLine: {
     color: '#ffffff',
@@ -5463,16 +5604,19 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   metaText: {
-    minHeight: 28,
-    backgroundColor: 'rgba(155, 92, 255, 0.15)',
-    color: '#655A88',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E4DEFB',
+    color: '#6E42E1',
     borderRadius: 14,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '900',
+    lineHeight: 13,
+    fontWeight: '700',
     textAlign: 'center',
+    textAlignVertical: 'center',
+    overflow: 'hidden',
   },
   campusRow: {
     flexDirection: 'row',
@@ -5491,16 +5635,19 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   tag: {
-    minHeight: 28,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E4DEFB',
     color: '#6E42E1',
-    backgroundColor: '#F4F1FE',
     borderRadius: 14,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '900',
+    lineHeight: 13,
+    fontWeight: '700',
     textAlign: 'center',
+    textAlignVertical: 'center',
+    overflow: 'hidden',
   },
   detailPanel: {
     borderRadius: 12,
@@ -5960,12 +6107,19 @@ const styles = StyleSheet.create({
   threadChipStatusActive: {
     color: '#ffffff',
   },
-  chatPanel: {
+  chatFullScreen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(155, 92, 255, 0.25)',
+  },
+  chatFullScreenInner: {
+    flex: 1,
+  },
+  messageListScroll: {
+    flex: 1,
   },
   chatPanelHeader: {
     backgroundColor: '#F4F1FE',
